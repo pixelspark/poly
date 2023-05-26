@@ -10,6 +10,11 @@ where
 	let s: String = Deserialize::deserialize(deserializer)?;
 	match s.as_str() {
 		"gptneox" => Ok(ModelArchitecture::GptNeoX),
+		"mpt" => Ok(ModelArchitecture::Mpt),
+		"llama" => Ok(ModelArchitecture::Llama),
+		"gpt2" => Ok(ModelArchitecture::Gpt2),
+		"gptj" => Ok(ModelArchitecture::GptJ),
+		"bloom" => Ok(ModelArchitecture::Bloom),
 		_ => Err(serde::de::Error::custom("invalid model architecture name")),
 	}
 }
