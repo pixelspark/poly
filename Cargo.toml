@@ -1,0 +1,21 @@
+[package]
+name = "llmd"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+axum = "0.6.18"
+clap = { version = "4.3.0", features = ["derive"] }
+futures-util = "0.3.28"
+serde = { version = "1.0.163", features = ["derive"] }
+tokio = { version = "1.28.1", features = ["full"] }
+toml = "0.7.4"
+llm = { git = "https://github.com/rustformers/llm.git" }
+flume = "0.10.14"
+rand = "0.8.5"
+thiserror = "1.0.40"
+env_logger = "0.10.0"
+log = "0.4.17"
+async-stream = "0.3.5"

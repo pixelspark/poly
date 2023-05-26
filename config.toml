@@ -1,0 +1,6 @@
+bind_address = "0.0.0.0:3000"
+
+[[endpoints]]
+name = "pythia"
+model_path  = "./data/pythia-160m-q4_0.bin"
+architecture = "gptneox"
