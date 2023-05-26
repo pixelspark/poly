@@ -1,6 +1,6 @@
 bind_address = "0.0.0.0:3000"
 
-[[endpoints]]
-name = "pythia"
+[endpoints.pythia]
 model_path  = "./data/pythia-160m-q4_0.bin"
 architecture = "gptneox"
+threads_per_session = 1

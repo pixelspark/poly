@@ -34,6 +34,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{fs::File, io::Read};
 
+use crate::config::DEFAULT_THREADS_PER_SESSION;
+
 pub struct ServerState {
 	config: Config,
 	models: HashMap<String, Box<dyn llm::Model>>,
@@ -57,7 +59,7 @@ async fn main() {
 	};
 
 	// Load models
-	for endpoint in &state.config.endpoints {
+	for (endpoint_name, endpoint) in &state.config.endpoints {
 		let params = ModelParameters {
 			prefer_mmap: true,
 			context_size: 512,
@@ -65,12 +67,12 @@ async fn main() {
 		};
 
 		let model = llm::load_dynamic(endpoint.architecture, &endpoint.model_path, params, None, |progress| {
-			log::debug!("Loading: {progress:#?}");
+			log::debug!("Loading endpoint {endpoint_name}: {progress:#?}");
 		})
 		.expect("load model");
 
-		state.models.insert(endpoint.name.clone(), model);
-		log::info!("Loaded model {}", endpoint.name);
+		state.models.insert(endpoint_name.clone(), model);
+		log::info!("Loaded model for endpoint {}", endpoint_name);
 	}
 
 	// Set up API server
@@ -78,7 +80,8 @@ async fn main() {
 		.route("/", get(index_handler))
 		.route("/status", get(status_handler))
 		.route("/model/:endpoint/live", get(sse_handler))
-		.route("/model/:endpoint/completion", post(completion_handler))
+		.route("/model/:endpoint/completion", post(post_model_completion_handler))
+		.route("/model/:endpoint/completion", get(get_model_completion_handler))
 		.with_state(Arc::new(state));
 	axum::Server::bind(&bind_address).serve(app.into_make_service()).await.unwrap();
 }
@@ -95,7 +98,7 @@ async fn index_handler() -> impl IntoResponse {
 
 async fn status_handler(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
 	Json(StatusResponse {
-		endpoints: state.config.endpoints.iter().map(|e| e.name.clone()).collect(),
+		endpoints: state.config.endpoints.keys().cloned().collect(),
 	})
 }
 
@@ -116,7 +119,10 @@ async fn sse_handler(
 		let model = state.models.get(&endpoint_name).unwrap();
 		let inference_config = InferenceSessionConfig::default();
 		let mut session = model.start_session(inference_config);
-		let inference_parameters: InferenceParameters = request.clone().into();
+		let mut inference_parameters: InferenceParameters = request.clone().into();
+		inference_parameters.n_threads = state.config.endpoints[&endpoint_name]
+			.threads_per_session
+			.unwrap_or(DEFAULT_THREADS_PER_SESSION);
 		log::trace!("SSE request {:#?}", request);
 
 		session
@@ -167,18 +173,37 @@ async fn sse_handler(
 	))
 }
 
-async fn completion_handler(
+async fn get_model_completion_handler(
+	State(state): State<Arc<ServerState>>,
+	Path(endpoint_name): Path<String>,
+	Query(request): Query<GenerateRequest>,
+) -> Result<Json<GenerateResponse>, GenerateError> {
+	completion_handler(state, &endpoint_name, &request).await
+}
+
+async fn post_model_completion_handler(
 	State(state): State<Arc<ServerState>>,
 	Path(endpoint_name): Path<String>,
 	Json(request): Json<GenerateRequest>,
 ) -> Result<Json<GenerateResponse>, GenerateError> {
-	let Some(model) = state.models.get(&endpoint_name) else {
-		return Err(GenerateError::EndpointNotFound(endpoint_name));
+	completion_handler(state, &endpoint_name, &request).await
+}
+
+async fn completion_handler(
+	state: Arc<ServerState>,
+	endpoint_name: &str,
+	request: &GenerateRequest,
+) -> Result<Json<GenerateResponse>, GenerateError> {
+	let Some(model) = state.models.get(endpoint_name) else {
+		return Err(GenerateError::EndpointNotFound(endpoint_name.to_string()));
 	};
 
 	let inference_config = InferenceSessionConfig::default();
 	let mut session = model.start_session(inference_config);
-	let inference_parameters = request.clone().into();
+	let mut inference_parameters: InferenceParameters = request.clone().into();
+	inference_parameters.n_threads = state.config.endpoints[endpoint_name]
+		.threads_per_session
+		.unwrap_or(DEFAULT_THREADS_PER_SESSION);
 	let mut text = String::new();
 
 	log::trace!("Completion request {:?}", request);

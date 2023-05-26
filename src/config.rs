@@ -1,7 +1,7 @@
 use clap::Parser;
 use llm::ModelArchitecture;
 use serde::{Deserialize, Deserializer};
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 fn architecture_from_str<'de, D>(deserializer: D) -> Result<ModelArchitecture, D::Error>
 where
@@ -19,21 +19,26 @@ where
 	}
 }
 
+pub const DEFAULT_THREADS_PER_SESSION: usize = 8;
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct Endpoint {
+	/// The model architecture type
 	#[serde(deserialize_with = "architecture_from_str")]
 	pub architecture: ModelArchitecture,
+
+	/// Path to the model file
 	pub model_path: PathBuf,
 
-	/// Path for the endpoint URL
-	pub name: String,
+	/// Threads per session
+	pub threads_per_session: Option<usize>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Config {
 	pub bind_address: String,
 
-	pub endpoints: Vec<Endpoint>,
+	pub endpoints: HashMap<String, Endpoint>,
 }
 
 #[derive(Parser, Debug)]
