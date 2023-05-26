@@ -11,7 +11,7 @@ pub struct GenerateRequest {
 	pub batch_size: usize,
 	pub repeat_last_n: usize,
 	pub repeat_penalty: f32,
-	pub temp: f32,
+	pub temperature: f32,
 	pub top_k: usize,
 	pub top_p: f32,
 }
@@ -24,7 +24,7 @@ impl Default for GenerateRequest {
 			batch_size: 8,
 			repeat_last_n: 64,
 			repeat_penalty: 1.30,
-			temp: 0.80,
+			temperature: 0.80,
 			top_k: 40,
 			top_p: 0.95,
 		}
@@ -38,7 +38,7 @@ impl From<GenerateRequest> for InferenceParameters {
 			top_k: val.top_k,
 			top_p: val.top_p,
 			repeat_penalty: val.repeat_penalty,
-			temperature: val.temp,
+			temperature: val.temperature,
 			repetition_penalty_last_n: val.repeat_last_n,
 			..Default::default()
 		}
