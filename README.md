@@ -26,11 +26,11 @@ cargo run --release
 To generate completions:
 
 ```sh
-curl -XPOST --url http://10.10.1.160:3000/pythia/completion --header 'Content-type: application/json' --data '{"prompt": "Hello "}' -vvv
+curl -XPOST --url http://localhost:3000/model/pythia/completion --header 'Content-type: application/json' --data '{"prompt": "Hello "}' -vvv
 ```
 
 To stream completions as they are generated:
 
 ```sh
-curl -XPOST --url http://10.10.1.160:3000/pythia/live --header 'Content-type: application/json' --data '{"prompt": "Hello "}' -vvv
+curl --url "http://localhost:3000/model/pythia/live?prompt=foo&max_tokens=10" -vvv
 ```

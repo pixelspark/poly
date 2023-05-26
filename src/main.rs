@@ -4,11 +4,17 @@ mod config;
 use api::GenerateError;
 use api::GenerateRequest;
 use api::GenerateResponse;
+use api::StatusResponse;
 use async_stream::stream;
 use axum::extract::Path;
+use axum::extract::Query;
 use axum::extract::State;
+use axum::http::header::CONTENT_TYPE;
+use axum::http::HeaderValue;
 use axum::response::sse::Event;
+use axum::response::IntoResponse;
 use axum::response::Sse;
+use axum::routing::get;
 use axum::routing::post;
 use axum::Json;
 use axum::Router;
@@ -69,18 +75,36 @@ async fn main() {
 
 	// Set up API server
 	let app = Router::new()
-		.route("/:endpoint/live", post(sse_handler))
-		.route("/:endpoint/completion", post(completion_handler))
+		.route("/", get(index_handler))
+		.route("/status", get(status_handler))
+		.route("/model/:endpoint/live", get(sse_handler))
+		.route("/model/:endpoint/completion", post(completion_handler))
 		.with_state(Arc::new(state));
 	axum::Server::bind(&bind_address).serve(app.into_make_service()).await.unwrap();
+}
+
+async fn index_handler() -> impl IntoResponse {
+	let mut f = File::open("index.html").unwrap();
+	let mut html = String::new();
+	f.read_to_string(&mut html).unwrap();
+
+	let mut res = html.into_response();
+	res.headers_mut().append(CONTENT_TYPE, HeaderValue::from_static("text/html"));
+	res
+}
+
+async fn status_handler(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
+	Json(StatusResponse {
+		endpoints: state.config.endpoints.iter().map(|e| e.name.clone()).collect(),
+	})
 }
 
 async fn sse_handler(
 	State(state): State<Arc<ServerState>>,
 	Path(endpoint_name): Path<String>,
-	Json(request): Json<GenerateRequest>,
+	Query(request): Query<GenerateRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, GenerateError> {
-	println!("New live connection for endpoint '{}'", endpoint_name.as_str());
+	log::debug!("New live connection for endpoint '{}'", endpoint_name.as_str());
 
 	if !state.models.contains_key(&endpoint_name) {
 		return Err(GenerateError::EndpointNotFound(endpoint_name));
@@ -93,6 +117,7 @@ async fn sse_handler(
 		let inference_config = InferenceSessionConfig::default();
 		let mut session = model.start_session(inference_config);
 		let inference_parameters: InferenceParameters = request.clone().into();
+		log::trace!("SSE request {:#?}", request);
 
 		session
 			.infer(
@@ -108,12 +133,11 @@ async fn sse_handler(
 				|r| -> Result<_, GenerateError> {
 					match r {
 						llm::InferenceResponse::PromptToken(t) | llm::InferenceResponse::InferredToken(t) => {
-							print!("{t}");
+							log::trace!("{t}");
 							let tx = tx.clone();
 							tokio::spawn(async move {
 								tx.send(t).await.unwrap();
 							});
-							std::io::stdout().flush().unwrap();
 							Ok(llm::InferenceFeedback::Continue)
 						}
 						_ => Ok(llm::InferenceFeedback::Continue),

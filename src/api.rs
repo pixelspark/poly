@@ -50,6 +50,11 @@ pub struct GenerateResponse {
 	pub text: String,
 }
 
+#[derive(Serialize)]
+pub struct StatusResponse {
+	pub endpoints: Vec<String>,
+}
+
 #[derive(Error, Debug)]
 pub enum GenerateError {
 	#[error("endpont not found: {0}")]
