@@ -6,15 +6,32 @@
   </head>
 
   <body>
-    <input id="prompt" placeholder="Prompt..." onkeyup="promptKeyup(event)" />
+    <div class="bar">
+      <input id="prompt" placeholder="Prompt..." onkeyup="promptKeyup(event)" />
+      <select id="model">
+        <option>Loading...</option>
+      </select>
+    </div>
 
     <textarea id="results" readonly disabled></textarea>
 
     <script>
       const server = "http://localhost:3000";
       const maxTokens = 50;
-
       let eventSource = null;
+      const modelSelect = document.getElementById("model");
+
+      fetch(server + "/model").then(async (e) => {
+        const data = await e.json();
+        modelSelect.childNodes.forEach((e) => modelSelect.removeChild(e));
+        for (const m of data.models) {
+          const opt = document.createElement("OPTION");
+          opt.value = m;
+          opt.innerText = m;
+          modelSelect.appendChild(opt);
+          modelSelect.value = m;
+        }
+      });
 
       function promptKeyup(e) {
         if (e.keyCode === 13) {
@@ -27,9 +44,13 @@
             eventSource = null;
           }
 
+          const model = modelSelect.value;
+
           eventSource = new EventSource(
             server +
-              "/model/rp/live?max_tokens=" +
+              "/model/" +
+              model +
+              "/live?max_tokens=" +
               maxTokens +
               "&prompt=" +
               encodeURIComponent(prompt)
@@ -50,6 +71,7 @@
     <style type="text/css">
       * {
         box-sizing: border-box;
+        font-family: Verdana;
       }
 
       html,
@@ -65,8 +87,24 @@
         flex-direction: column;
       }
 
+      input#prompt {
+        padding: 5px;
+      }
+
       textarea#results {
         height: 200px;
+        padding: 5px;
+        margin: 5px;
+      }
+
+      .bar {
+        display: flex;
+        flex-direction: row;
+        margin: 5px;
+      }
+
+      .bar > input {
+        flex: 1;
       }
     </style>
   </body>

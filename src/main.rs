@@ -6,6 +6,8 @@ use crate::backend::Backend;
 use api::GenerateError;
 use api::GenerateRequest;
 use api::GenerateResponse;
+use api::ModelsResponse;
+use api::Status;
 use api::StatusResponse;
 use async_stream::stream;
 use axum::extract::Path;
@@ -69,6 +71,7 @@ async fn main() {
 	let app = Router::new()
 		.nest_service("/", ServeDir::new("public"))
 		.route("/status", get(status_handler))
+		.route("/model", get(models_handler))
 		.route("/model/:endpoint/live", get(sse_handler))
 		.route("/model/:endpoint/completion", post(post_model_completion_handler))
 		.route("/model/:endpoint/completion", get(get_model_completion_handler))
@@ -77,9 +80,13 @@ async fn main() {
 	axum::Server::bind(&bind_address).serve(app.into_make_service()).await.unwrap();
 }
 
-async fn status_handler(State(state): State<Arc<Backend>>) -> impl IntoResponse {
-	Json(StatusResponse {
-		endpoints: state.config.endpoints.keys().cloned().collect(),
+async fn status_handler() -> impl IntoResponse {
+	Json(StatusResponse { status: Status::Ok })
+}
+
+async fn models_handler(State(state): State<Arc<Backend>>) -> impl IntoResponse {
+	Json(ModelsResponse {
+		models: state.config.endpoints.keys().cloned().collect(),
 	})
 }
 

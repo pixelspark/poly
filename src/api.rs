@@ -46,13 +46,24 @@ impl From<GenerateRequest> for InferenceParameters {
 }
 
 #[derive(Serialize)]
+pub struct ModelsResponse {
+	pub models: Vec<String>,
+}
+
+#[derive(Serialize)]
 pub struct GenerateResponse {
 	pub text: String,
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Status {
+	Ok,
+}
+
+#[derive(Serialize)]
 pub struct StatusResponse {
-	pub endpoints: Vec<String>,
+	pub status: Status,
 }
 
 #[derive(Error, Debug)]
