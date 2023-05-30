@@ -39,6 +39,8 @@ pub struct Config {
 	pub bind_address: String,
 
 	pub endpoints: HashMap<String, Endpoint>,
+
+	pub allowed_origins: Option<Vec<String>>,
 }
 
 #[derive(Parser, Debug)]
