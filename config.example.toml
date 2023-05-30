@@ -1,5 +1,10 @@
 bind_address = "0.0.0.0:3000"
 
+# Leave out or add "*" as allowed origin to allow any
+allowed_origins = [
+	"https://localhost:3000"
+]
+
 [endpoints.pythia]
 model_path  = "./data/pythia-160m-q4_0.bin"
 architecture = "gptneox"
