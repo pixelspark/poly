@@ -9,8 +9,6 @@ use async_stream::stream;
 use axum::extract::Path;
 use axum::extract::Query;
 use axum::extract::State;
-use axum::http::header::CONTENT_TYPE;
-use axum::http::HeaderValue;
 use axum::response::sse::Event;
 use axum::response::IntoResponse;
 use axum::response::Sse;
@@ -33,6 +31,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{fs::File, io::Read};
+use tower_http::services::ServeDir;
 
 use crate::config::DEFAULT_THREADS_PER_SESSION;
 
@@ -77,23 +76,13 @@ async fn main() {
 
 	// Set up API server
 	let app = Router::new()
-		.route("/", get(index_handler))
+		.nest_service("/", ServeDir::new("public"))
 		.route("/status", get(status_handler))
 		.route("/model/:endpoint/live", get(sse_handler))
 		.route("/model/:endpoint/completion", post(post_model_completion_handler))
 		.route("/model/:endpoint/completion", get(get_model_completion_handler))
 		.with_state(Arc::new(state));
 	axum::Server::bind(&bind_address).serve(app.into_make_service()).await.unwrap();
-}
-
-async fn index_handler() -> impl IntoResponse {
-	let mut f = File::open("index.html").unwrap();
-	let mut html = String::new();
-	f.read_to_string(&mut html).unwrap();
-
-	let mut res = html.into_response();
-	res.headers_mut().append(CONTENT_TYPE, HeaderValue::from_static("text/html"));
-	res
 }
 
 async fn status_handler(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
