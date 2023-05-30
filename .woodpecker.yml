@@ -1,0 +1,51 @@
+pipeline:
+  build:
+    image: rust:1.66
+    commands:
+      - cargo build --release
+
+  publish_live:
+    image: plugins/docker
+    settings:
+      registry: 10.0.0.2:5000
+      repo: 10.0.0.2:5000/llmd
+      insecure: true
+      tags: [live]
+    when:
+      branch:
+        - live
+      event:
+        - push
+
+  publish_staging:
+    image: plugins/docker
+    settings:
+      registry: 10.0.0.2:5000
+      repo: 10.0.0.2:5000/llmd
+      insecure: true
+      tags: [staging]
+    when:
+      branch:
+        - staging
+      event:
+        - push
+
+  tar:
+    image: rust:1.66
+    commands:
+      - tar cf llmd.tar.gz target/release/llmd
+    when:
+      event:
+        - tag
+
+  release:
+    image: plugins/gitea-release
+    settings:
+      api_key:
+        from_secret: GITEA_RELEASE_API_KEY
+      base_url: https://git.dialogicplatform.com
+      files:
+        - llmd.tar.gz
+    when:
+      event:
+        - tag
