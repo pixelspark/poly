@@ -130,8 +130,15 @@ async fn sse_handler(
 						llm::InferenceResponse::PromptToken(t) | llm::InferenceResponse::InferredToken(t) => {
 							log::trace!("{t}");
 							let tx = tx.clone();
+
+							// Do not continue when client has disconnected
+							if tx.is_closed() {
+								log::debug!("client has disconnected live session, halting generation");
+								return Ok(llm::InferenceFeedback::Halt);
+							}
 							tokio::spawn(async move {
-								tx.send(t).await.unwrap();
+								// This may fail when a client disconnects while we are generating a token, but we don't care (anymore).
+								tx.send(t).await
 							});
 							Ok(llm::InferenceFeedback::Continue)
 						}
