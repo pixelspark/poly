@@ -104,7 +104,7 @@ async fn sse_handler(
 		backend
 			.complete(&endpoint_name, &request, |r| -> Result<_, GenerateError> {
 				match r {
-					llm::InferenceResponse::PromptToken(t) | llm::InferenceResponse::InferredToken(t) => {
+					llm::InferenceResponse::InferredToken(t) => {
 						log::trace!("{t}");
 						let tx = tx.clone();
 
@@ -163,17 +163,15 @@ async fn post_model_completion_handler(
 
 async fn completion_handler(backend: Arc<Backend>, endpoint_name: &str, request: &GenerateRequest) -> Result<Json<GenerateResponse>, GenerateError> {
 	let mut text = String::new();
-	backend
-		.complete(endpoint_name, request, |r| -> Result<_, GenerateError> {
-			match r {
-				llm::InferenceResponse::PromptToken(t) | llm::InferenceResponse::InferredToken(t) => {
-					log::trace!("Output: {t}");
-					text += &t;
-					Ok(llm::InferenceFeedback::Continue)
-				}
-				_ => Ok(llm::InferenceFeedback::Continue),
+	backend.complete(endpoint_name, request, |r| -> Result<_, GenerateError> {
+		match r {
+			llm::InferenceResponse::InferredToken(t) => {
+				log::trace!("Output: {t}");
+				text += &t;
+				Ok(llm::InferenceFeedback::Continue)
 			}
-		})
-		.unwrap();
+			_ => Ok(llm::InferenceFeedback::Continue),
+		}
+	})?;
 	Ok(Json(GenerateResponse { text }))
 }

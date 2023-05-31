@@ -1,5 +1,5 @@
 use axum::{http::StatusCode, response::IntoResponse};
-use llm::InferenceParameters;
+use llm::{InferenceError, InferenceParameters};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -70,6 +70,9 @@ pub struct StatusResponse {
 pub enum GenerateError {
 	#[error("endpont not found: {0}")]
 	EndpointNotFound(String),
+
+	#[error("inference error: {0}")]
+	InferenceError(#[from] InferenceError),
 }
 
 impl IntoResponse for GenerateError {

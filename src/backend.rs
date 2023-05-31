@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 
-use llm::{
-	InferenceError, InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, InferenceSessionConfig, InferenceStats,
-	ModelParameters,
-};
+use llm::{InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, InferenceSessionConfig, InferenceStats, ModelParameters};
 
 use crate::{
 	api::{GenerateError, GenerateRequest},
@@ -53,13 +50,11 @@ impl Backend {
 		endpoint_name: &str,
 		request: &GenerateRequest,
 		callback: impl FnMut(InferenceResponse) -> Result<InferenceFeedback, GenerateError>,
-	) -> Result<InferenceStats, InferenceError> {
+	) -> Result<InferenceStats, GenerateError> {
 		log::info!("Completion request {} {:?}", endpoint_name, request);
 
 		if !self.models.contains_key(endpoint_name) {
-			return Err(InferenceError::UserCallback(Box::new(GenerateError::EndpointNotFound(
-				endpoint_name.to_string(),
-			))));
+			return Err(GenerateError::EndpointNotFound(endpoint_name.to_string()));
 		};
 
 		let model = self.models.get(endpoint_name).unwrap();
