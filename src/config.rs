@@ -35,12 +35,30 @@ pub struct Endpoint {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+#[serde(default)]
 pub struct Config {
+	/// Address and port to bind the server to ("0.0.0.0:1234")
 	pub bind_address: String,
 
+	/// Endpoints to serve
 	pub endpoints: HashMap<String, Endpoint>,
 
+	/// CORS allowed origins
 	pub allowed_origins: Option<Vec<String>>,
+
+	/// The maximum number of concurrent requests serviced
+	pub max_concurrent: usize,
+}
+
+impl Default for Config {
+	fn default() -> Self {
+		Self {
+			bind_address: String::from("0.0.0.0:3000"),
+			endpoints: HashMap::new(),
+			allowed_origins: None,
+			max_concurrent: 8,
+		}
+	}
 }
 
 #[derive(Parser, Debug)]

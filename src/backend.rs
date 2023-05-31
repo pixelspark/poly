@@ -7,6 +7,8 @@ use crate::{
 	config::{Config, DEFAULT_THREADS_PER_SESSION},
 };
 
+use tracing::log::*;
+
 pub struct Backend {
 	pub config: Config,
 	pub models: HashMap<String, Box<dyn llm::Model>>,
@@ -33,13 +35,13 @@ impl Backend {
 				llm::VocabularySource::Model,
 				params,
 				|progress| {
-					log::debug!("Loading endpoint {endpoint_name}: {progress:#?}");
+					debug!("Loading endpoint {endpoint_name}: {progress:#?}");
 				},
 			)
 			.expect("load model");
 
 			backend.models.insert(endpoint_name.clone(), model);
-			log::info!("Loaded model for endpoint {}", endpoint_name);
+			info!("Loaded model for endpoint {}", endpoint_name);
 		}
 
 		backend
@@ -51,7 +53,7 @@ impl Backend {
 		request: &GenerateRequest,
 		callback: impl FnMut(InferenceResponse) -> Result<InferenceFeedback, GenerateError>,
 	) -> Result<InferenceStats, GenerateError> {
-		log::info!("Completion request {} {:?}", endpoint_name, request);
+		info!("Completion request {} {:?}", endpoint_name, request);
 
 		if !self.models.contains_key(endpoint_name) {
 			return Err(GenerateError::EndpointNotFound(endpoint_name.to_string()));
@@ -77,7 +79,7 @@ impl Backend {
 			&mut Default::default(),
 			callback,
 		)?;
-		log::info!(
+		info!(
 			"Completion request completed: {} tok/s, {:?}",
 			(stats.predict_tokens as f64) / stats.predict_duration.as_secs_f64(),
 			stats

@@ -32,13 +32,16 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{fs::File, io::Read};
+use tower::limit::ConcurrencyLimitLayer;
 use tower_http::cors::Any;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
+use tower_http::trace::TraceLayer;
+use tracing::{debug, info, trace};
 
 #[tokio::main]
 async fn main() {
-	env_logger::init();
+	tracing_subscriber::fmt::init();
 	// Read config file
 	let args = Args::parse();
 	let mut config_file = File::open(args.config_path).expect("open config file");
@@ -46,7 +49,7 @@ async fn main() {
 	config_file.read_to_string(&mut config_string).expect("read config file");
 	let config: Config = toml::from_str(&config_string).unwrap();
 	let bind_address: SocketAddr = config.bind_address.parse().unwrap();
-	log::info!("Starting llmd; bind address: {bind_address}",);
+	info!("Starting llmd; bind address: {bind_address}",);
 
 	// Set up CORS
 	let mut cors_layer = CorsLayer::new();
@@ -75,8 +78,10 @@ async fn main() {
 		.route("/model/:endpoint/live", get(sse_handler))
 		.route("/model/:endpoint/completion", post(post_model_completion_handler))
 		.route("/model/:endpoint/completion", get(get_model_completion_handler))
-		.with_state(Arc::new(state))
-		.layer(cors_layer);
+		.layer(ConcurrencyLimitLayer::new(state.config.max_concurrent))
+		.layer(TraceLayer::new_for_http())
+		.layer(cors_layer)
+		.with_state(Arc::new(state));
 
 	axum::Server::bind(&bind_address).serve(app.into_make_service()).await.unwrap();
 }
@@ -96,7 +101,7 @@ async fn sse_handler(
 	Path(endpoint_name): Path<String>,
 	Query(request): Query<GenerateRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, GenerateError> {
-	log::debug!("New live connection for endpoint '{}'", endpoint_name.as_str());
+	debug!("New live connection for endpoint '{}'", endpoint_name.as_str());
 
 	let (tx, mut rx) = tokio::sync::mpsc::channel(32);
 
@@ -105,12 +110,12 @@ async fn sse_handler(
 			.complete(&endpoint_name, &request, |r| -> Result<_, GenerateError> {
 				match r {
 					llm::InferenceResponse::InferredToken(t) => {
-						log::trace!("{t}");
+						trace!("{t}");
 						let tx = tx.clone();
 
 						// Do not continue when client has disconnected
 						if tx.is_closed() {
-							log::debug!("client has disconnected live session, halting generation");
+							debug!("client has disconnected live session, halting generation");
 							return Ok(llm::InferenceFeedback::Halt);
 						}
 						tokio::spawn(async move {
@@ -166,7 +171,7 @@ async fn completion_handler(backend: Arc<Backend>, endpoint_name: &str, request:
 	backend.complete(endpoint_name, request, |r| -> Result<_, GenerateError> {
 		match r {
 			llm::InferenceResponse::InferredToken(t) => {
-				log::trace!("Output: {t}");
+				trace!("Output: {t}");
 				text += &t;
 				Ok(llm::InferenceFeedback::Continue)
 			}
