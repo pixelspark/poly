@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 
-use llm::{InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, InferenceSessionConfig, InferenceStats, ModelParameters};
+use llm::{
+	InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, InferenceSessionConfig, InferenceStats, ModelParameters,
+	OutputRequest,
+};
 
 use crate::{
-	api::{GenerateError, GenerateRequest},
+	api::{EmbeddingResponse, GenerateError, GenerateRequest},
 	config::{Config, DEFAULT_THREADS_PER_SESSION},
 };
 
@@ -45,6 +48,40 @@ impl Backend {
 		}
 
 		backend
+	}
+
+	pub fn embedding(&self, endpoint_name: &str, request: &GenerateRequest) -> Result<EmbeddingResponse, GenerateError> {
+		info!("Embedding request {} {:?}", endpoint_name, request);
+
+		if !self.models.contains_key(endpoint_name) {
+			return Err(GenerateError::EndpointNotFound(endpoint_name.to_string()));
+		};
+
+		let model = self.models.get(endpoint_name).unwrap();
+		let inference_config = InferenceSessionConfig::default();
+		let mut session = model.start_session(inference_config);
+		let mut inference_parameters: InferenceParameters = request.clone().into();
+		inference_parameters.n_threads = self.config.endpoints[endpoint_name]
+			.threads_per_session
+			.unwrap_or(DEFAULT_THREADS_PER_SESSION);
+
+		let mut output_request = OutputRequest {
+			embeddings: Some(Vec::new()),
+			all_logits: None,
+		};
+
+		let vocab = model.vocabulary();
+		let beginning_of_sentence = true;
+		let query_token_ids = vocab
+			.tokenize(&request.prompt, beginning_of_sentence)
+			.unwrap()
+			.iter()
+			.map(|(_, tok)| *tok)
+			.collect::<Vec<_>>();
+		model.evaluate(&mut session, &inference_parameters, &query_token_ids, &mut output_request);
+		Ok(EmbeddingResponse {
+			embedding: output_request.embeddings.unwrap(),
+		})
 	}
 
 	pub fn complete(

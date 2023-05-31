@@ -3,6 +3,7 @@ mod backend;
 mod config;
 
 use crate::backend::Backend;
+use api::EmbeddingResponse;
 use api::GenerateError;
 use api::GenerateRequest;
 use api::GenerateResponse;
@@ -78,6 +79,8 @@ async fn main() {
 		.route("/model/:endpoint/live", get(sse_handler))
 		.route("/model/:endpoint/completion", post(post_model_completion_handler))
 		.route("/model/:endpoint/completion", get(get_model_completion_handler))
+		.route("/model/:endpoint/embedding", post(post_model_embedding_handler))
+		.route("/model/:endpoint/embedding", get(get_model_embedding_handler))
 		.layer(ConcurrencyLimitLayer::new(state.config.max_concurrent))
 		.layer(TraceLayer::new_for_http())
 		.layer(cors_layer)
@@ -150,6 +153,22 @@ async fn sse_handler(
 	))
 }
 
+async fn get_model_embedding_handler(
+	State(state): State<Arc<Backend>>,
+	Path(endpoint_name): Path<String>,
+	Query(request): Query<GenerateRequest>,
+) -> Result<Json<EmbeddingResponse>, GenerateError> {
+	embedding_handler(state, &endpoint_name, &request).await
+}
+
+async fn post_model_embedding_handler(
+	State(state): State<Arc<Backend>>,
+	Path(endpoint_name): Path<String>,
+	Json(request): Json<GenerateRequest>,
+) -> Result<Json<EmbeddingResponse>, GenerateError> {
+	embedding_handler(state, &endpoint_name, &request).await
+}
+
 async fn get_model_completion_handler(
 	State(state): State<Arc<Backend>>,
 	Path(endpoint_name): Path<String>,
@@ -179,4 +198,8 @@ async fn completion_handler(backend: Arc<Backend>, endpoint_name: &str, request:
 		}
 	})?;
 	Ok(Json(GenerateResponse { text }))
+}
+
+async fn embedding_handler(backend: Arc<Backend>, endpoint_name: &str, request: &GenerateRequest) -> Result<Json<EmbeddingResponse>, GenerateError> {
+	Ok(Json(backend.embedding(endpoint_name, request)?))
 }

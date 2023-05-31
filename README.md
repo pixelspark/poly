@@ -34,3 +34,9 @@ To stream completions as they are generated:
 ```sh
 curl --url "http://localhost:3000/model/pythia/live?prompt=foo&max_tokens=10" -vvv
 ```
+
+To generate embeddings:
+
+```sh
+curl -XPOST --url http://localhost:3000/model/pythia/embedding --header 'Content-type: application/json' --data '{"prompt": "Hello "}' -vvv
+```

@@ -16,6 +16,11 @@ pub struct GenerateRequest {
 	pub top_p: f32,
 }
 
+#[derive(Serialize, Clone, Debug)]
+pub struct EmbeddingResponse {
+	pub embedding: Vec<f32>,
+}
+
 impl Default for GenerateRequest {
 	fn default() -> Self {
 		Self {
