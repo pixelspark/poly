@@ -77,6 +77,7 @@ async fn main() {
 		.route("/model/:endpoint/completion", get(get_model_completion_handler))
 		.with_state(Arc::new(state))
 		.layer(cors_layer);
+
 	axum::Server::bind(&bind_address).serve(app.into_make_service()).await.unwrap();
 }
 

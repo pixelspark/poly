@@ -30,9 +30,15 @@ impl Backend {
 				lora_adapters: None,
 			};
 
-			let model = llm::load_dynamic(endpoint.architecture, &endpoint.model_path, params, None, |progress| {
-				log::debug!("Loading endpoint {endpoint_name}: {progress:#?}");
-			})
+			let model = llm::load_dynamic(
+				endpoint.architecture,
+				&endpoint.model_path,
+				llm::VocabularySource::Model,
+				params,
+				|progress| {
+					log::debug!("Loading endpoint {endpoint_name}: {progress:#?}");
+				},
+			)
 			.expect("load model");
 
 			backend.models.insert(endpoint_name.clone(), model);
@@ -51,9 +57,9 @@ impl Backend {
 		log::info!("Completion request {} {:?}", endpoint_name, request);
 
 		if !self.models.contains_key(endpoint_name) {
-			return Err(InferenceError::UserCallback(Some(Box::new(GenerateError::EndpointNotFound(
+			return Err(InferenceError::UserCallback(Box::new(GenerateError::EndpointNotFound(
 				endpoint_name.to_string(),
-			)))));
+			))));
 		};
 
 		let model = self.models.get(endpoint_name).unwrap();
