@@ -48,7 +48,7 @@ use tracing::{debug, info, trace};
 
 #[derive(Clone)]
 struct CurrentUser {
-	key: String,
+	key: Option<String>,
 }
 
 #[tokio::main]
@@ -90,11 +90,12 @@ async fn main() {
 			"/model",
 			Router::new()
 				.route("/", get(models_handler))
-				.route("/:endpoint/live", get(sse_handler))
-				.route("/:endpoint/completion", post(post_model_completion_handler))
-				.route("/:endpoint/completion", get(get_model_completion_handler))
-				.route("/:endpoint/embedding", post(post_model_embedding_handler))
-				.route("/:endpoint/embedding", get(get_model_embedding_handler))
+				.route("/:model/status", get(status_with_user_handler))
+				.route("/:model/live", get(sse_handler))
+				.route("/:model/completion", post(post_model_completion_handler))
+				.route("/:model/completion", get(get_model_completion_handler))
+				.route("/:model/embedding", post(post_model_embedding_handler))
+				.route("/:model/embedding", get(get_model_embedding_handler))
 				.layer(axum::middleware::from_fn_with_state(state.clone(), authorize))
 				.layer(cors_layer)
 				.layer(ConcurrencyLimitLayer::new(state.config.max_concurrent)),
@@ -109,8 +110,12 @@ async fn status_handler() -> impl IntoResponse {
 	Json(StatusResponse { status: Status::Ok })
 }
 
-async fn models_handler(State(state): State<Arc<Backend>>, Extension(current_user): Extension<CurrentUser>) -> impl IntoResponse {
-	tracing::info!("models request from user {}", current_user.key);
+async fn status_with_user_handler(Extension(current_user): Extension<CurrentUser>) -> impl IntoResponse {
+	tracing::info!("models request from user {:?}", current_user.key);
+	Json(StatusResponse { status: Status::Ok })
+}
+
+async fn models_handler(State(state): State<Arc<Backend>>) -> impl IntoResponse {
 	Json(ModelsResponse {
 		models: state.config.endpoints.keys().cloned().collect(),
 	})
@@ -251,7 +256,9 @@ async fn authorize<T>(
 			return Err(StatusCode::UNAUTHORIZED);
 		}
 
-		req.extensions_mut().insert(CurrentUser { key: auth_header });
+		req.extensions_mut().insert(CurrentUser { key: Some(auth_header) });
+	} else {
+		req.extensions_mut().insert(CurrentUser { key: None });
 	}
 
 	Ok(next.run(req).await)

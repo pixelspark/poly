@@ -21,7 +21,7 @@
       let eventSource = null;
       const modelSelect = document.getElementById("model");
 
-      function fetchModels() {
+      async function fetchModels() {
         const apiKey = document.getElementById("apiKey").value;
         fetch("/model?api_key=" + encodeURIComponent(apiKey)).then(
           async (e) => {
@@ -37,6 +37,8 @@
           }
         );
       }
+
+      fetchModels();
 
       function promptKeyup(e) {
         if (e.keyCode === 13) {
