@@ -7,6 +7,7 @@
 
   <body>
     <div class="bar">
+      <input id="apiKey" placeholder="API key..." onkeyup="fetchModels()" />
       <input id="prompt" placeholder="Prompt..." onkeyup="promptKeyup(event)" />
       <select id="model">
         <option>Loading...</option>
@@ -16,28 +17,33 @@
     <textarea id="results" readonly disabled></textarea>
 
     <script>
-      const server = "";
       const maxTokens = 50;
       let eventSource = null;
       const modelSelect = document.getElementById("model");
 
-      fetch(server + "/model").then(async (e) => {
-        const data = await e.json();
-        modelSelect.childNodes.forEach((e) => modelSelect.removeChild(e));
-        for (const m of data.models) {
-          const opt = document.createElement("OPTION");
-          opt.value = m;
-          opt.innerText = m;
-          modelSelect.appendChild(opt);
-          modelSelect.value = m;
-        }
-      });
+      function fetchModels() {
+        const apiKey = document.getElementById("apiKey").value;
+        fetch("/model?api_key=" + encodeURIComponent(apiKey)).then(
+          async (e) => {
+            const data = await e.json();
+            modelSelect.childNodes.forEach((e) => modelSelect.removeChild(e));
+            for (const m of data.models) {
+              const opt = document.createElement("OPTION");
+              opt.value = m;
+              opt.innerText = m;
+              modelSelect.appendChild(opt);
+              modelSelect.value = m;
+            }
+          }
+        );
+      }
 
       function promptKeyup(e) {
         if (e.keyCode === 13) {
           // Enter key pressed
 
           const prompt = document.getElementById("prompt").value;
+          const apiKey = document.getElementById("apiKey").value;
 
           if (eventSource !== null) {
             eventSource.close();
@@ -46,15 +52,14 @@
 
           const model = modelSelect.value;
 
-          eventSource = new EventSource(
-            server +
-              "/model/" +
-              model +
-              "/live?max_tokens=" +
-              maxTokens +
-              "&prompt=" +
-              encodeURIComponent(prompt)
-          );
+          const url = new URL("/model/" + model + "/live", document.location);
+          url.searchParams.append("max_tokens", maxTokens);
+          url.searchParams.append("prompt", prompt);
+          if (apiKey.length > 0) {
+            url.searchParams.append("api_key", apiKey);
+          }
+
+          eventSource = new EventSource(url);
           document.getElementById("results").value = "";
 
           eventSource.onmessage = function (e) {
