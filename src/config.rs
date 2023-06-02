@@ -48,6 +48,9 @@ pub struct Config {
 
 	/// The maximum number of concurrent requests serviced
 	pub max_concurrent: usize,
+
+	/// Allowed API keys. When empty, all keys will be allowed.
+	pub allowed_keys: Vec<String>,
 }
 
 impl Default for Config {
@@ -57,6 +60,7 @@ impl Default for Config {
 			endpoints: HashMap::new(),
 			allowed_origins: None,
 			max_concurrent: 8,
+			allowed_keys: vec![],
 		}
 	}
 }

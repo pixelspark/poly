@@ -40,3 +40,9 @@ To generate embeddings:
 ```sh
 curl -XPOST --url http://localhost:3000/model/pythia/embedding --header 'Content-type: application/json' --data '{"prompt": "Hello "}' -vvv
 ```
+
+### Securing the API
+
+To limit access to specific users, add a set of allowed API keys to the config file (`allowed_keys`). Then supply the key
+on each request, either using an `Authorization: Bearer <key>` header, or using a `?api_key=<key>` query parameter. When
+both are supplied the header key takes precedence.

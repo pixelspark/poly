@@ -6,6 +6,10 @@ allowed_origins = [
 	"https://localhost:3000"
 ]
 
+allowed_keys = [
+	"foo"
+]
+
 [endpoints.pythia]
 model_path  = "./data/pythia-160m-q4_0.bin"
 architecture = "gptneox"

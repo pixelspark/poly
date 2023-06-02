@@ -6,6 +6,11 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Deserialize, Clone, Debug)]
+pub struct KeyQuery {
+	pub api_key: Option<String>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct GenerateRequest {
 	pub prompt: String,

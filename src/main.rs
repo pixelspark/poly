@@ -7,6 +7,7 @@ use api::EmbeddingResponse;
 use api::GenerateError;
 use api::GenerateRequest;
 use api::GenerateResponse;
+use api::KeyQuery;
 use api::ModelsResponse;
 use api::Status;
 use api::StatusResponse;
@@ -14,14 +15,19 @@ use async_stream::stream;
 use axum::extract::Path;
 use axum::extract::Query;
 use axum::extract::State;
+use axum::http;
 use axum::http::header::CONTENT_TYPE;
 use axum::http::HeaderValue;
 use axum::http::Method;
+use axum::http::Request;
+use axum::http::StatusCode;
+use axum::middleware::Next;
 use axum::response::sse::Event;
 use axum::response::IntoResponse;
 use axum::response::Sse;
 use axum::routing::get;
 use axum::routing::post;
+use axum::Extension;
 use axum::Json;
 use axum::Router;
 use clap::Parser;
@@ -39,6 +45,11 @@ use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, info, trace};
+
+#[derive(Clone)]
+struct CurrentUser {
+	key: String,
+}
 
 #[tokio::main]
 async fn main() {
@@ -69,22 +80,27 @@ async fn main() {
 		cors_layer = cors_layer.allow_methods([Method::GET, Method::POST]);
 	}
 
-	let state = Backend::from(config);
+	let state = Arc::new(Backend::from(config));
 
 	// Set up API server
 	let app = Router::new()
 		.nest_service("/", ServeDir::new("public"))
 		.route("/status", get(status_handler))
-		.route("/model", get(models_handler))
-		.route("/model/:endpoint/live", get(sse_handler))
-		.route("/model/:endpoint/completion", post(post_model_completion_handler))
-		.route("/model/:endpoint/completion", get(get_model_completion_handler))
-		.route("/model/:endpoint/embedding", post(post_model_embedding_handler))
-		.route("/model/:endpoint/embedding", get(get_model_embedding_handler))
-		.layer(ConcurrencyLimitLayer::new(state.config.max_concurrent))
+		.nest(
+			"/model",
+			Router::new()
+				.route("/", get(models_handler))
+				.route("/:endpoint/live", get(sse_handler))
+				.route("/:endpoint/completion", post(post_model_completion_handler))
+				.route("/:endpoint/completion", get(get_model_completion_handler))
+				.route("/:endpoint/embedding", post(post_model_embedding_handler))
+				.route("/:endpoint/embedding", get(get_model_embedding_handler))
+				.layer(axum::middleware::from_fn_with_state(state.clone(), authorize))
+				.layer(cors_layer)
+				.layer(ConcurrencyLimitLayer::new(state.config.max_concurrent)),
+		)
 		.layer(TraceLayer::new_for_http())
-		.layer(cors_layer)
-		.with_state(Arc::new(state));
+		.with_state(state);
 
 	axum::Server::bind(&bind_address).serve(app.into_make_service()).await.unwrap();
 }
@@ -93,7 +109,8 @@ async fn status_handler() -> impl IntoResponse {
 	Json(StatusResponse { status: Status::Ok })
 }
 
-async fn models_handler(State(state): State<Arc<Backend>>) -> impl IntoResponse {
+async fn models_handler(State(state): State<Arc<Backend>>, Extension(current_user): Extension<CurrentUser>) -> impl IntoResponse {
+	tracing::info!("models request from user {}", current_user.key);
 	Json(ModelsResponse {
 		models: state.config.endpoints.keys().cloned().collect(),
 	})
@@ -202,4 +219,40 @@ async fn completion_handler(backend: Arc<Backend>, endpoint_name: &str, request:
 
 async fn embedding_handler(backend: Arc<Backend>, endpoint_name: &str, request: &GenerateRequest) -> Result<Json<EmbeddingResponse>, GenerateError> {
 	Ok(Json(backend.embedding(endpoint_name, request)?))
+}
+
+async fn authorize<T>(
+	State(state): State<Arc<Backend>>,
+	Query(key): Query<KeyQuery>,
+	mut req: Request<T>,
+	next: Next<T>,
+) -> Result<impl IntoResponse, StatusCode> {
+	if !state.config.allowed_keys.is_empty() {
+		let auth_header = req
+			.headers()
+			.get(http::header::AUTHORIZATION)
+			.and_then(|header| header.to_str().ok())
+			.map(|s| s.to_string());
+
+		let auth_header = if let Some(auth_header) = auth_header {
+			auth_header
+				.strip_prefix("Bearer ")
+				.ok_or(StatusCode::UNAUTHORIZED)
+				.map(|x| x.to_string())?
+		} else {
+			match key.api_key {
+				Some(k) => k,
+				None => return Err(StatusCode::UNAUTHORIZED),
+			}
+		};
+
+		// Check if key is allowed
+		if !state.config.allowed_keys.contains(&auth_header) {
+			return Err(StatusCode::UNAUTHORIZED);
+		}
+
+		req.extensions_mut().insert(CurrentUser { key: auth_header });
+	}
+
+	Ok(next.run(req).await)
 }
