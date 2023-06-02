@@ -1,5 +1,7 @@
+use std::sync::Arc;
+
 use axum::{http::StatusCode, response::IntoResponse};
-use llm::{InferenceError, InferenceParameters};
+use llm::{samplers::TopPTopK, InferenceError, InferenceParameters, TokenBias};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -38,13 +40,18 @@ impl Default for GenerateRequest {
 
 impl From<GenerateRequest> for InferenceParameters {
 	fn from(val: GenerateRequest) -> Self {
-		InferenceParameters {
-			n_batch: val.batch_size,
+		let sampler = TopPTopK {
 			top_k: val.top_k,
 			top_p: val.top_p,
 			repeat_penalty: val.repeat_penalty,
 			temperature: val.temperature,
 			repetition_penalty_last_n: val.repeat_last_n,
+			bias_tokens: TokenBias::empty(),
+		};
+
+		InferenceParameters {
+			n_batch: val.batch_size,
+			sampler: Arc::new(sampler),
 			..Default::default()
 		}
 	}
