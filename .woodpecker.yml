@@ -8,6 +8,7 @@ pipeline:
     image: node:18
     commands:
       - cd client
+      - npm install
       - npm run build
 
   publish_live:
