@@ -6,8 +6,8 @@ use llm::{
 };
 
 use crate::{
-	api::{EmbeddingResponse, GenerateError, GenerateRequest},
-	config::{Config, DEFAULT_THREADS_PER_SESSION},
+	api::{EmbeddingResponse, GenerateError, PromptRequest, SessionRequest},
+	config::{Config, TaskConfig, DEFAULT_THREADS_PER_SESSION},
 };
 
 use tracing::log::*;
@@ -15,6 +15,48 @@ use tracing::log::*;
 pub struct Backend {
 	pub config: Config,
 	pub models: HashMap<String, Arc<Box<dyn llm::Model>>>,
+}
+
+pub struct BackendSession {
+	model: Arc<Box<dyn llm::Model>>,
+	session: llm::InferenceSession,
+	inference_parameters: InferenceParameters,
+	max_tokens: Option<usize>,
+	task_config: TaskConfig,
+}
+
+impl BackendSession {
+	pub fn complete(
+		&mut self,
+		request: &PromptRequest,
+		callback: impl FnMut(InferenceResponse) -> Result<InferenceFeedback, GenerateError>,
+	) -> Result<InferenceStats, GenerateError> {
+		let prompt = format!(
+			"{}{}{}",
+			&self.task_config.prefix.as_ref().unwrap_or(&String::from("")),
+			request.prompt,
+			&self.task_config.postfix.as_ref().unwrap_or(&String::from(""))
+		);
+
+		let stats = self.session.infer(
+			self.model.as_ref().as_ref(),
+			&mut rand::thread_rng(),
+			&InferenceRequest {
+				prompt: llm::Prompt::Text(&prompt),
+				parameters: &self.inference_parameters,
+				play_back_previous_tokens: false,
+				maximum_token_count: self.max_tokens,
+			},
+			&mut Default::default(),
+			callback,
+		)?;
+		info!(
+			"Completion request completed: {} tok/s, {:?}",
+			(stats.predict_tokens as f64) / stats.predict_duration.as_secs_f64(),
+			stats
+		);
+		Ok(stats)
+	}
 }
 
 impl Backend {
@@ -59,7 +101,7 @@ impl Backend {
 		backend
 	}
 
-	pub fn embedding(&self, model_name: &str, request: &GenerateRequest) -> Result<EmbeddingResponse, GenerateError> {
+	pub fn embedding(&self, model_name: &str, request: &SessionRequest, prompt: &PromptRequest) -> Result<EmbeddingResponse, GenerateError> {
 		info!("Embedding request {} {:?}", model_name, request);
 
 		if !self.models.contains_key(model_name) {
@@ -80,7 +122,7 @@ impl Backend {
 		let vocab = model.vocabulary();
 		let beginning_of_sentence = true;
 		let query_token_ids = vocab
-			.tokenize(&request.prompt, beginning_of_sentence)
+			.tokenize(&prompt.prompt, beginning_of_sentence)
 			.unwrap()
 			.iter()
 			.map(|(_, tok)| *tok)
@@ -91,13 +133,8 @@ impl Backend {
 		})
 	}
 
-	pub fn complete(
-		&self,
-		task_name: &str,
-		request: &GenerateRequest,
-		callback: impl FnMut(InferenceResponse) -> Result<InferenceFeedback, GenerateError>,
-	) -> Result<InferenceStats, GenerateError> {
-		info!("Completion request {} {:?}", task_name, request);
+	pub fn start(&self, task_name: &str, request: &SessionRequest) -> Result<BackendSession, GenerateError> {
+		info!("Start session {task_name}");
 
 		if !self.config.tasks.contains_key(task_name) {
 			return Err(GenerateError::TaskNotFound(task_name.to_string()));
@@ -106,36 +143,18 @@ impl Backend {
 		let task_config = self.config.tasks.get(task_name).unwrap();
 		let model = self.models.get(&task_config.model).unwrap();
 		let inference_config = InferenceSessionConfig::default();
-		let mut session = model.start_session(inference_config);
+		let session = model.start_session(inference_config);
 		let mut inference_parameters: InferenceParameters = request.clone().into();
 		inference_parameters.n_threads = self.config.models[&task_config.model]
 			.threads_per_session
 			.unwrap_or(DEFAULT_THREADS_PER_SESSION);
 
-		let prompt = format!(
-			"{}{}{}",
-			&task_config.prefix.as_ref().unwrap_or(&String::from("")),
-			request.prompt,
-			&task_config.postfix.as_ref().unwrap_or(&String::from(""))
-		);
-
-		let stats = session.infer(
-			model.as_ref().as_ref(),
-			&mut rand::thread_rng(),
-			&InferenceRequest {
-				prompt: llm::Prompt::Text(&prompt),
-				parameters: &inference_parameters,
-				play_back_previous_tokens: false,
-				maximum_token_count: Some(request.max_tokens),
-			},
-			&mut Default::default(),
-			callback,
-		)?;
-		info!(
-			"Completion request completed: {} tok/s, {:?}",
-			(stats.predict_tokens as f64) / stats.predict_duration.as_secs_f64(),
-			stats
-		);
-		Ok(stats)
+		Ok(BackendSession {
+			model: model.clone(),
+			session,
+			inference_parameters,
+			max_tokens: Some(request.max_tokens),
+			task_config: task_config.clone(),
+		})
 	}
 }

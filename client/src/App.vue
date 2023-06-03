@@ -12,10 +12,12 @@
     <select v-model="screen">
       <option value="task">Task</option>
       <option value="embedding">Embedding</option>
+      <option value="chat">Chat</option>
     </select>
 
     <Task v-if="screen === 'task'"></Task>
     <Embedding v-else-if="screen === 'embedding'"></Embedding>
+    <Chat v-else-if="screen === 'chat'"></Chat>
   </div>
 </template>
 
@@ -23,8 +25,9 @@
 import { onMounted, provide, ref, watch } from "vue";
 import Task from "./components/Task.vue";
 import Embedding from "./components/Embedding.vue";
+import Chat from "./components/Chat.vue";
 
-const screen = ref("task");
+const screen = ref("chat");
 
 const apiKey = ref("");
 const base = ref(new URL("", document.location.toString()).toString());

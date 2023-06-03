@@ -41,6 +41,15 @@ To generate embeddings:
 curl -XPOST --url http://localhost:3000/task/pythia/embedding --header 'Content-type: application/json' --data '{"prompt": "Hello "}' -vvv
 ```
 
+### WebSocket chat API
+
+To chat, connect through WebSocket to the following endpoint:
+
+`ws://localhost:3000/task/pythia/chat?api_key=<key>`
+
+Send messages as text frames, and receive individual token messages. When a message is finished, the server will send an
+empty text frame.
+
 ### Securing the API
 
 To limit access to specific users, add a set of allowed API keys to the config file (`allowed_keys`). Then supply the key

@@ -12,8 +12,7 @@ pub struct KeyQuery {
 
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
-pub struct GenerateRequest {
-	pub prompt: String,
+pub struct SessionRequest {
 	pub max_tokens: usize,
 	pub batch_size: usize,
 	pub repeat_last_n: usize,
@@ -23,15 +22,28 @@ pub struct GenerateRequest {
 	pub top_p: f32,
 }
 
+#[derive(Deserialize, Clone, Debug)]
+pub struct PromptRequest {
+	pub prompt: String,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct SessionAndPromptRequest {
+	#[serde(flatten)]
+	pub session: SessionRequest,
+
+	#[serde(flatten)]
+	pub prompt: PromptRequest,
+}
+
 #[derive(Serialize, Clone, Debug)]
 pub struct EmbeddingResponse {
 	pub embedding: Vec<f32>,
 }
 
-impl Default for GenerateRequest {
+impl Default for SessionRequest {
 	fn default() -> Self {
 		Self {
-			prompt: Default::default(),
 			max_tokens: 128,
 			batch_size: 8,
 			repeat_last_n: 64,
@@ -43,8 +55,8 @@ impl Default for GenerateRequest {
 	}
 }
 
-impl From<GenerateRequest> for InferenceParameters {
-	fn from(val: GenerateRequest) -> Self {
+impl From<SessionRequest> for InferenceParameters {
+	fn from(val: SessionRequest) -> Self {
 		let sampler = TopPTopK {
 			top_k: val.top_k,
 			top_p: val.top_p,
