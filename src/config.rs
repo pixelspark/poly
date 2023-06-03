@@ -22,7 +22,7 @@ where
 pub const DEFAULT_THREADS_PER_SESSION: usize = 8;
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct Endpoint {
+pub struct ModelConfig {
 	/// The model architecture type
 	#[serde(deserialize_with = "architecture_from_str")]
 	pub architecture: ModelArchitecture,
@@ -34,14 +34,24 @@ pub struct Endpoint {
 	pub threads_per_session: Option<usize>,
 }
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct TaskConfig {
+	pub model: String,
+	pub prefix: Option<String>,
+	pub postfix: Option<String>,
+}
+
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Config {
 	/// Address and port to bind the server to ("0.0.0.0:1234")
 	pub bind_address: String,
 
-	/// Endpoints to serve
-	pub endpoints: HashMap<String, Endpoint>,
+	/// Models that are used
+	pub models: HashMap<String, ModelConfig>,
+
+	/// Tasks that are made available
+	pub tasks: HashMap<String, TaskConfig>,
 
 	/// CORS allowed origins
 	pub allowed_origins: Option<Vec<String>>,
@@ -57,7 +67,8 @@ impl Default for Config {
 	fn default() -> Self {
 		Self {
 			bind_address: String::from("0.0.0.0:3000"),
-			endpoints: HashMap::new(),
+			models: HashMap::new(),
+			tasks: HashMap::new(),
 			allowed_origins: None,
 			max_concurrent: 8,
 			allowed_keys: vec![],

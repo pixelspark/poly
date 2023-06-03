@@ -11,6 +11,7 @@ use api::KeyQuery;
 use api::ModelsResponse;
 use api::Status;
 use api::StatusResponse;
+use api::TasksResponse;
 use async_stream::stream;
 use axum::extract::Path;
 use axum::extract::Query;
@@ -90,16 +91,22 @@ async fn main() {
 			"/model",
 			Router::new()
 				.route("/", get(models_handler))
-				.route("/:model/status", get(status_with_user_handler))
-				.route("/:model/live", get(sse_handler))
-				.route("/:model/completion", post(post_model_completion_handler))
-				.route("/:model/completion", get(get_model_completion_handler))
 				.route("/:model/embedding", post(post_model_embedding_handler))
 				.route("/:model/embedding", get(get_model_embedding_handler))
-				.layer(axum::middleware::from_fn_with_state(state.clone(), authorize))
-				.layer(cors_layer)
-				.layer(ConcurrencyLimitLayer::new(state.config.max_concurrent)),
+				.layer(axum::middleware::from_fn_with_state(state.clone(), authorize)),
 		)
+		.nest(
+			"/task",
+			Router::new()
+				.route("/", get(tasks_handler))
+				.route("/:task/status", get(status_with_user_handler))
+				.route("/:task/live", get(sse_task_handler))
+				.route("/:task/completion", post(post_task_completion_handler))
+				.route("/:task/completion", get(get_task_completion_handler))
+				.layer(axum::middleware::from_fn_with_state(state.clone(), authorize)),
+		)
+		.layer(cors_layer)
+		.layer(ConcurrencyLimitLayer::new(state.config.max_concurrent))
 		.layer(TraceLayer::new_for_http())
 		.with_state(state);
 
@@ -111,28 +118,34 @@ async fn status_handler() -> impl IntoResponse {
 }
 
 async fn status_with_user_handler(Extension(current_user): Extension<CurrentUser>) -> impl IntoResponse {
-	tracing::info!("models request from user {:?}", current_user.key);
+	tracing::info!("task request from user {:?}", current_user.key);
 	Json(StatusResponse { status: Status::Ok })
 }
 
 async fn models_handler(State(state): State<Arc<Backend>>) -> impl IntoResponse {
 	Json(ModelsResponse {
-		models: state.config.endpoints.keys().cloned().collect(),
+		models: state.config.models.keys().cloned().collect(),
 	})
 }
 
-async fn sse_handler(
+async fn tasks_handler(State(state): State<Arc<Backend>>) -> impl IntoResponse {
+	Json(TasksResponse {
+		tasks: state.config.tasks.keys().cloned().collect(),
+	})
+}
+
+async fn sse_task_handler(
 	State(backend): State<Arc<Backend>>,
-	Path(endpoint_name): Path<String>,
+	Path(task_name): Path<String>,
 	Query(request): Query<GenerateRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, GenerateError> {
-	debug!("New live connection for endpoint '{}'", endpoint_name.as_str());
+	debug!("New live connection for task '{}'", task_name.as_str());
 
 	let (tx, mut rx) = tokio::sync::mpsc::channel(32);
 
 	tokio::spawn(async move {
 		backend
-			.complete(&endpoint_name, &request, |r| -> Result<_, GenerateError> {
+			.complete(&task_name, &request, |r| -> Result<_, GenerateError> {
 				match r {
 					llm::InferenceResponse::InferredToken(t) => {
 						trace!("{t}");
@@ -191,25 +204,25 @@ async fn post_model_embedding_handler(
 	embedding_handler(state, &endpoint_name, &request).await
 }
 
-async fn get_model_completion_handler(
+async fn get_task_completion_handler(
 	State(state): State<Arc<Backend>>,
-	Path(endpoint_name): Path<String>,
+	Path(task_name): Path<String>,
 	Query(request): Query<GenerateRequest>,
 ) -> Result<Json<GenerateResponse>, GenerateError> {
-	completion_handler(state, &endpoint_name, &request).await
+	task_completion_handler(state, &task_name, &request).await
 }
 
-async fn post_model_completion_handler(
+async fn post_task_completion_handler(
 	State(state): State<Arc<Backend>>,
-	Path(endpoint_name): Path<String>,
+	Path(task_name): Path<String>,
 	Json(request): Json<GenerateRequest>,
 ) -> Result<Json<GenerateResponse>, GenerateError> {
-	completion_handler(state, &endpoint_name, &request).await
+	task_completion_handler(state, &task_name, &request).await
 }
 
-async fn completion_handler(backend: Arc<Backend>, endpoint_name: &str, request: &GenerateRequest) -> Result<Json<GenerateResponse>, GenerateError> {
+async fn task_completion_handler(backend: Arc<Backend>, task_name: &str, request: &GenerateRequest) -> Result<Json<GenerateResponse>, GenerateError> {
 	let mut text = String::new();
-	backend.complete(endpoint_name, request, |r| -> Result<_, GenerateError> {
+	backend.complete(task_name, request, |r| -> Result<_, GenerateError> {
 		match r {
 			llm::InferenceResponse::InferredToken(t) => {
 				trace!("Output: {t}");

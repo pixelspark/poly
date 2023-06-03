@@ -68,6 +68,11 @@ pub struct ModelsResponse {
 }
 
 #[derive(Serialize)]
+pub struct TasksResponse {
+	pub tasks: Vec<String>,
+}
+
+#[derive(Serialize)]
 pub struct GenerateResponse {
 	pub text: String,
 }
@@ -86,7 +91,7 @@ pub struct StatusResponse {
 #[derive(Error, Debug)]
 pub enum GenerateError {
 	#[error("endpont not found: {0}")]
-	EndpointNotFound(String),
+	TaskNotFound(String),
 
 	#[error("inference error: {0}")]
 	InferenceError(#[from] InferenceError),

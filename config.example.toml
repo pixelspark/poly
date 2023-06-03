@@ -10,7 +10,10 @@ allowed_keys = [
 	"foo"
 ]
 
-[endpoints.pythia]
+[models.pythia160m]
 model_path  = "./data/pythia-160m-q4_0.bin"
 architecture = "gptneox"
 threads_per_session = 1
+
+[tasks.pythia]
+model = "pythia160m"
