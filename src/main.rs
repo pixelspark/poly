@@ -37,6 +37,8 @@ use config::Config;
 use futures_util::Stream;
 use std::convert::Infallible;
 use std::net::SocketAddr;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{fs::File, io::Read};
@@ -85,7 +87,7 @@ async fn main() {
 
 	// Set up API server
 	let app = Router::new()
-		.nest_service("/", ServeDir::new("public"))
+		.nest_service("/", ServeDir::new("client/dist/"))
 		.route("/status", get(status_handler))
 		.nest(
 			"/model",
@@ -142,6 +144,8 @@ async fn sse_task_handler(
 	debug!("New live connection for task '{}'", task_name.as_str());
 
 	let (tx, mut rx) = tokio::sync::mpsc::channel(32);
+	let active = Arc::new(AtomicBool::new(true));
+	let active_clone = active.clone();
 
 	tokio::spawn(async move {
 		backend
@@ -152,7 +156,7 @@ async fn sse_task_handler(
 						let tx = tx.clone();
 
 						// Do not continue when client has disconnected
-						if tx.is_closed() {
+						if tx.is_closed() || !active_clone.load(Ordering::SeqCst) {
 							debug!("client has disconnected live session, halting generation");
 							return Ok(llm::InferenceFeedback::Halt);
 						}
@@ -168,7 +172,18 @@ async fn sse_task_handler(
 			.unwrap();
 	});
 
+	struct Guard {
+		flag: Arc<AtomicBool>,
+	}
+	impl Drop for Guard {
+		fn drop(&mut self) {
+			tracing::info!("SSE disconnected");
+			self.flag.store(false, Ordering::SeqCst);
+		}
+	}
+
 	let stream = stream! {
+		let _guard = Guard{flag: active};
 		loop {
 			match rx.recv().await {
 				Some(token) => {
@@ -177,7 +192,6 @@ async fn sse_task_handler(
 				},
 				None => return
 			}
-
 		}
 	};
 

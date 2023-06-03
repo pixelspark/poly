@@ -1,0 +1,43 @@
+* {
+  font-family: verdana;
+  box-sizing: border-box;
+}
+
+:root {
+  margin: 0;
+  padding: 0;
+  color: rgb(77, 77, 77);
+  font-size: 9pt;
+}
+
+p {
+  line-height: 1.2em;
+}
+
+dl {
+  display: flex;
+}
+
+dt {
+  margin: 0;
+  padding: 0;
+  padding-right: 5px;
+  display: inline-block;
+  flex: 0;
+  flex-basis: 100px;
+  text-align: right;
+}
+
+dd {
+  display: inline-block;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+dd > input,
+dd > select,
+dd > textarea {
+  width: 100%;
+}

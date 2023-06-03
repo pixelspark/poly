@@ -1,8 +1,14 @@
 pipeline:
   build:
-    image: rust:1.67
+    image: rust:1.70
     commands:
       - cargo build --release
+
+  build_client:
+    image: node:18
+    commands:
+      - cd client
+      - npm run build
 
   publish_live:
     image: plugins/docker
@@ -31,7 +37,7 @@ pipeline:
         - push
 
   tar:
-    image: rust:1.67
+    image: rust:1.70
     commands:
       - tar cf llmd.tar.gz target/release/llmd
     when:
