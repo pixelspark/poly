@@ -20,7 +20,7 @@
 </template>
 
 <script setup lang="ts">
-import { provide, ref } from "vue";
+import { onMounted, provide, ref, watch } from "vue";
 import Task from "./components/Task.vue";
 import Embedding from "./components/Embedding.vue";
 
@@ -28,6 +28,14 @@ const screen = ref("task");
 
 const apiKey = ref("");
 const base = ref(new URL("", document.location.toString()).toString());
+
+watch(base, (nv) => {
+  window.localStorage.setItem("llmd.base", nv.toString());
+});
+
+onMounted(() => {
+  base.value = window.localStorage.getItem("llmd.base") || base.value;
+});
 
 async function get(path: string, body: any) {
   const url = new URL(path, base.value);
