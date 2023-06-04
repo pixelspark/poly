@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::{http::StatusCode, response::IntoResponse};
-use llm::{samplers::TopPTopK, InferenceError, InferenceParameters, TokenBias};
+use llm::{samplers::TopPTopK, InferenceError, InferenceParameters, TokenBias, TokenizationError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -107,6 +107,12 @@ pub enum GenerateError {
 
 	#[error("inference error: {0}")]
 	InferenceError(#[from] InferenceError),
+
+	#[error("tokenization error: {0}")]
+	TokenizationError(#[from] TokenizationError),
+
+	#[error("illegal token encountered")]
+	IllegalToken,
 }
 
 impl IntoResponse for GenerateError {

@@ -46,6 +46,9 @@ pub struct TaskConfig {
 
 	/// Text to postfix each user input with
 	pub postfix: Option<String>,
+
+	/// Tokens that users should not be able to input as they are used for signalling
+	pub private_tokens: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Clone, Debug)]

@@ -157,24 +157,27 @@ async fn ws_task_handler(
 async fn socket_task_handler(mut ws: WebSocket, backend: Arc<Backend>, task_name: String, request: SessionRequest) {
 	// Spawn a blocking thread
 	let (tx_prompt, rx_prompt) = std::sync::mpsc::channel();
-	let (tx_response, mut rx_response) = tokio::sync::mpsc::channel(32);
+	let (tx_response, mut rx_response) = tokio::sync::mpsc::channel::<Result<String, String>>(32);
 	thread::spawn(move || {
 		let mut session = backend.start(&task_name, &request).unwrap();
 		while let Ok(prompt) = rx_prompt.recv() {
 			let prompt_request = PromptRequest { prompt };
-			session
-				.complete(&prompt_request, |r| match r {
-					InferenceResponse::InferredToken(token) => {
-						tx_response.blocking_send(token).unwrap();
-						Ok(llm::InferenceFeedback::Continue)
-					}
-					InferenceResponse::EotToken => Ok(llm::InferenceFeedback::Halt),
-					InferenceResponse::PromptToken(_) | InferenceResponse::SnapshotToken(_) => Ok(llm::InferenceFeedback::Continue),
-				})
-				.unwrap();
+			let res = session.complete(&prompt_request, |r| match r {
+				InferenceResponse::InferredToken(token) => {
+					tx_response.blocking_send(Ok(token)).unwrap();
+					Ok(llm::InferenceFeedback::Continue)
+				}
+				InferenceResponse::EotToken => Ok(llm::InferenceFeedback::Halt),
+				InferenceResponse::PromptToken(_) | InferenceResponse::SnapshotToken(_) => Ok(llm::InferenceFeedback::Continue),
+			});
 
-			// Send empty token to signal this cycle has ended
-			tx_response.blocking_send("".to_string()).unwrap();
+			match res {
+				Ok(_) => {
+					// Send empty token to signal this cycle has ended
+					tx_response.blocking_send(Ok("".to_string())).unwrap();
+				}
+				Err(e) => tx_response.blocking_send(Err(e.to_string())).unwrap(),
+			}
 		}
 		tracing::info!("ending model thread");
 	});
@@ -209,7 +212,16 @@ async fn socket_task_handler(mut ws: WebSocket, backend: Arc<Backend>, task_name
 					}
 				},
 				response = rx_response.recv() => {
-					ws.send(Message::Text(response.unwrap())).await.unwrap();
+					match response.unwrap() {
+						Ok(txt) => {
+							ws.send(Message::Text(txt)).await.unwrap()
+						},
+						Err(e) => {
+							tracing::error!("WebSocket: backend thread reported error: {e}");
+							break;
+						}
+					}
+
 				}
 			}
 		}

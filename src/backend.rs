@@ -29,26 +29,53 @@ impl BackendSession {
 	pub fn complete(
 		&mut self,
 		request: &PromptRequest,
-		callback: impl FnMut(InferenceResponse) -> Result<InferenceFeedback, GenerateError>,
+		mut callback: impl FnMut(InferenceResponse) -> Result<InferenceFeedback, GenerateError>,
 	) -> Result<InferenceStats, GenerateError> {
-		let prompt = format!(
-			"{}{}{}",
-			&self.task_config.prefix.as_ref().unwrap_or(&String::from("")),
-			request.prompt,
-			&self.task_config.postfix.as_ref().unwrap_or(&String::from(""))
-		);
+		// Generate tokens (prefix + prompt + postfix)
+		let beginning_of_sentence = self.session.n_past == 0;
+		let mut tokens =
+			Prompt::Text(self.task_config.prefix.as_ref().unwrap_or(&String::from(""))).to_tokens(self.model.vocabulary(), beginning_of_sentence)?;
+		let mut user_tokens = Prompt::Text(&request.prompt).to_tokens(self.model.vocabulary(), beginning_of_sentence && tokens.is_empty())?;
+
+		// Check for private tokens
+		let private_tokens = self.task_config.private_tokens.clone().unwrap_or(vec![]);
+		if !private_tokens.is_empty() {
+			let private_token_ids: Vec<u32> = private_tokens
+				.iter()
+				.map(|token_str| {
+					let toks = self.model.vocabulary().tokenize(token_str, false).unwrap();
+					if toks.len() != 1 {
+						panic!("invalid forbidden token configured: {token_str}");
+					}
+					toks[0].1
+				})
+				.collect();
+			if user_tokens.iter().any(|t| private_token_ids.contains(t)) {
+				return Err(GenerateError::IllegalToken);
+			}
+		}
+		tokens.append(&mut user_tokens);
+		let mut postfix_tokens = Prompt::Text(self.task_config.postfix.as_ref().unwrap_or(&String::from("")))
+			.to_tokens(self.model.vocabulary(), beginning_of_sentence && tokens.is_empty())?;
+		tokens.append(&mut postfix_tokens);
 
 		let stats = self.session.infer(
 			self.model.as_ref().as_ref(),
 			&mut rand::thread_rng(),
 			&InferenceRequest {
-				prompt: llm::Prompt::Text(&prompt),
+				prompt: llm::Prompt::Tokens(&tokens),
 				parameters: &self.inference_parameters,
 				play_back_previous_tokens: false,
 				maximum_token_count: self.max_tokens,
 			},
 			&mut Default::default(),
-			callback,
+			|r| -> Result<InferenceFeedback, GenerateError> {
+				match r {
+					// Swallow private tokens in output
+					InferenceResponse::InferredToken(t) if private_tokens.contains(&t) => Ok(InferenceFeedback::Continue),
+					_ => callback(r),
+				}
+			},
 		)?;
 		info!(
 			"Completion request completed: {} tok/s, {:?}",
