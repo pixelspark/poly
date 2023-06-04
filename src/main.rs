@@ -164,7 +164,10 @@ async fn socket_task_handler(mut ws: WebSocket, backend: Arc<Backend>, task_name
 			let prompt_request = PromptRequest { prompt };
 			let res = session.complete(&prompt_request, |r| match r {
 				InferenceResponse::InferredToken(token) => {
-					tx_response.blocking_send(Ok(token)).unwrap();
+					if tx_response.blocking_send(Ok(token)).is_err() {
+						// Connection is likely closed
+						return Ok(llm::InferenceFeedback::Halt);
+					}
 					Ok(llm::InferenceFeedback::Continue)
 				}
 				InferenceResponse::EotToken => Ok(llm::InferenceFeedback::Halt),
@@ -214,7 +217,10 @@ async fn socket_task_handler(mut ws: WebSocket, backend: Arc<Backend>, task_name
 				response = rx_response.recv() => {
 					match response.unwrap() {
 						Ok(txt) => {
-							ws.send(Message::Text(txt)).await.unwrap()
+							if let Err(e) = ws.send(Message::Text(txt)).await {
+								tracing::error!("WebSocket: send reported error: {e}");
+									break;
+							}
 						},
 						Err(e) => {
 							tracing::error!("WebSocket: backend thread reported error: {e}");
