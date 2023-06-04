@@ -102,8 +102,11 @@ pub struct StatusResponse {
 
 #[derive(Error, Debug)]
 pub enum GenerateError {
-	#[error("endpont not found: {0}")]
+	#[error("task not found: {0}")]
 	TaskNotFound(String),
+
+	#[error("model not found: {0}")]
+	ModelNotFound(String),
 
 	#[error("inference error: {0}")]
 	InferenceError(#[from] InferenceError),
@@ -115,8 +118,18 @@ pub enum GenerateError {
 	IllegalToken,
 }
 
+impl GenerateError {
+	fn status_code(&self) -> StatusCode {
+		match self {
+			GenerateError::TaskNotFound(_) | GenerateError::ModelNotFound(_) => StatusCode::NOT_FOUND,
+			GenerateError::InferenceError(_) | GenerateError::TokenizationError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+			GenerateError::IllegalToken => StatusCode::BAD_REQUEST,
+		}
+	}
+}
+
 impl IntoResponse for GenerateError {
 	fn into_response(self) -> axum::response::Response {
-		(StatusCode::INTERNAL_SERVER_ERROR, format!("{}", self)).into_response()
+		(self.status_code(), format!("{}", self)).into_response()
 	}
 }

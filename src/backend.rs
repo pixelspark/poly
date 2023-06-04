@@ -143,7 +143,7 @@ impl Backend {
 		info!("Embedding request {} {:?}", model_name, request);
 
 		if !self.models.contains_key(model_name) {
-			return Err(GenerateError::TaskNotFound(model_name.to_string()));
+			return Err(GenerateError::ModelNotFound(model_name.to_string()));
 		};
 
 		let model = self.models.get(model_name).unwrap();
