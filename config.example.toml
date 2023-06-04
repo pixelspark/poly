@@ -15,5 +15,17 @@ model_path  = "./data/pythia-160m-q4_0.bin"
 architecture = "gptneox"
 threads_per_session = 1
 
+[models.mpt_chat]
+model_path = "mpt-7b-chat-q5_1-ggjt.bin"
+architecture = "mpt"
+threads_per_session = 8
+
 [tasks.pythia]
 model = "pythia160m"
+
+[tasks.assistant]
+model = "mpt_chat"
+prelude = ""
+prefix = "<|im_start|>user\n"
+postfix = "<|im_end|><|im_start|>assistant\n" # answer<|im_end|>
+private_tokens = ["<|im_start|>", "<|im_end|>"]
