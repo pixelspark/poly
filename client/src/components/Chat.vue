@@ -146,6 +146,8 @@ ul.chat li div {
   padding-top: 10px;
   display: inline-block;
   border-radius: 15px;
+  white-space: pre-wrap;
+  line-height: 1.2em;
 }
 
 ul.chat li.user div {
