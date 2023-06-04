@@ -14,6 +14,7 @@ allowed_keys = [
 model_path  = "./data/pythia-160m-q4_0.bin"
 architecture = "gptneox"
 threads_per_session = 1
+context_size = 2048
 
 [models.mpt_chat]
 model_path = "mpt-7b-chat-q5_1-ggjt.bin"

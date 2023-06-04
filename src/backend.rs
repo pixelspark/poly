@@ -108,7 +108,7 @@ impl Backend {
 		for (endpoint_name, endpoint) in &backend.config.models {
 			let params = ModelParameters {
 				prefer_mmap: true,
-				context_size: 512,
+				context_size: endpoint.context_size.unwrap_or(512),
 				lora_adapters: None,
 			};
 

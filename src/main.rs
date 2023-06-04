@@ -177,9 +177,17 @@ async fn socket_task_handler(mut ws: WebSocket, backend: Arc<Backend>, task_name
 			match res {
 				Ok(_) => {
 					// Send empty token to signal this cycle has ended
-					tx_response.blocking_send(Ok("".to_string())).unwrap();
+					if tx_response.blocking_send(Ok("".to_string())).is_err() {
+						// Output channel was probably dropped
+						break;
+					}
 				}
-				Err(e) => tx_response.blocking_send(Err(e.to_string())).unwrap(),
+				Err(e) => {
+					if tx_response.blocking_send(Err(e.to_string())).is_err() {
+						// Output channel was probably dropped
+						break;
+					}
+				}
 			}
 		}
 		tracing::info!("ending model thread");

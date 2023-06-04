@@ -32,6 +32,9 @@ pub struct ModelConfig {
 
 	/// Threads per session
 	pub threads_per_session: Option<usize>,
+
+	/// Context size
+	pub context_size: Option<usize>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
