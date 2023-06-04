@@ -304,9 +304,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.3.0"
+version = "4.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93aae7a4192245f70fe75dd9157fc7b4a5bf53e88d30bd4396f7d8f9284d5acc"
+checksum = "b4ed2379f8603fa2b7509891660e802b88c70a79a6427a70abb5968054de2c28"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -315,9 +315,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.3.0"
+version = "4.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f423e341edefb78c9caba2d9c7f7687d0e72e89df3ce3394554754393ac3990"
+checksum = "72394f3339a76daf211e57d4bcb374410f3965dcc606dd0e03738c7888766980"
 dependencies = [
  "anstream",
  "anstyle",
@@ -328,9 +328,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.3.0"
+version = "4.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "191d9573962933b4027f932c600cd252ce27a8ad5979418fe78e43c07996f27b"
+checksum = "59e9ef9a08ee1c0e1f2e162121665ac45ac3783b0f897db7244ae75ad9a8f65b"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -781,7 +781,7 @@ dependencies = [
 [[package]]
 name = "ggml"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#ad07acf8cda854f75841ce05cc65adb694d96192"
+source = "git+https://github.com/rustformers/llm.git#e52a102d27b6e98e98cbd4e456a49cebfd4617b1"
 dependencies = [
  "ggml-sys",
  "thiserror",
@@ -790,7 +790,7 @@ dependencies = [
 [[package]]
 name = "ggml-sys"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#ad07acf8cda854f75841ce05cc65adb694d96192"
+source = "git+https://github.com/rustformers/llm.git#e52a102d27b6e98e98cbd4e456a49cebfd4617b1"
 dependencies = [
  "cc",
 ]
@@ -1102,7 +1102,7 @@ checksum = "ef53942eb7bf7ff43a617b3e2c1c4a5ecf5944a7c1bc12d7ee39bbb15e5c1519"
 [[package]]
 name = "llm"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#ad07acf8cda854f75841ce05cc65adb694d96192"
+source = "git+https://github.com/rustformers/llm.git#e52a102d27b6e98e98cbd4e456a49cebfd4617b1"
 dependencies = [
  "llm-base",
  "llm-bloom",
@@ -1117,7 +1117,7 @@ dependencies = [
 [[package]]
 name = "llm-base"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#ad07acf8cda854f75841ce05cc65adb694d96192"
+source = "git+https://github.com/rustformers/llm.git#e52a102d27b6e98e98cbd4e456a49cebfd4617b1"
 dependencies = [
  "bytemuck",
  "ggml",
@@ -1135,7 +1135,7 @@ dependencies = [
 [[package]]
 name = "llm-bloom"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#ad07acf8cda854f75841ce05cc65adb694d96192"
+source = "git+https://github.com/rustformers/llm.git#e52a102d27b6e98e98cbd4e456a49cebfd4617b1"
 dependencies = [
  "bytemuck",
  "llm-base",
@@ -1144,7 +1144,7 @@ dependencies = [
 [[package]]
 name = "llm-gpt2"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#ad07acf8cda854f75841ce05cc65adb694d96192"
+source = "git+https://github.com/rustformers/llm.git#e52a102d27b6e98e98cbd4e456a49cebfd4617b1"
 dependencies = [
  "bytemuck",
  "llm-base",
@@ -1153,7 +1153,7 @@ dependencies = [
 [[package]]
 name = "llm-gptj"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#ad07acf8cda854f75841ce05cc65adb694d96192"
+source = "git+https://github.com/rustformers/llm.git#e52a102d27b6e98e98cbd4e456a49cebfd4617b1"
 dependencies = [
  "bytemuck",
  "llm-base",
@@ -1162,7 +1162,7 @@ dependencies = [
 [[package]]
 name = "llm-gptneox"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#ad07acf8cda854f75841ce05cc65adb694d96192"
+source = "git+https://github.com/rustformers/llm.git#e52a102d27b6e98e98cbd4e456a49cebfd4617b1"
 dependencies = [
  "bytemuck",
  "llm-base",
@@ -1172,7 +1172,7 @@ dependencies = [
 [[package]]
 name = "llm-llama"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#ad07acf8cda854f75841ce05cc65adb694d96192"
+source = "git+https://github.com/rustformers/llm.git#e52a102d27b6e98e98cbd4e456a49cebfd4617b1"
 dependencies = [
  "bytemuck",
  "llm-base",
@@ -1183,7 +1183,7 @@ dependencies = [
 [[package]]
 name = "llm-mpt"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#ad07acf8cda854f75841ce05cc65adb694d96192"
+source = "git+https://github.com/rustformers/llm.git#e52a102d27b6e98e98cbd4e456a49cebfd4617b1"
 dependencies = [
  "bytemuck",
  "llm-base",

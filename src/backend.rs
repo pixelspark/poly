@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use llm::{
 	InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, InferenceSessionConfig, InferenceStats, ModelParameters,
-	OutputRequest,
+	OutputRequest, Prompt,
 };
 
 use crate::{
@@ -143,11 +143,26 @@ impl Backend {
 		let task_config = self.config.tasks.get(task_name).unwrap();
 		let model = self.models.get(&task_config.model).unwrap();
 		let inference_config = InferenceSessionConfig::default();
-		let session = model.start_session(inference_config);
+		let mut session = model.start_session(inference_config);
+
 		let mut inference_parameters: InferenceParameters = request.clone().into();
 		inference_parameters.n_threads = self.config.models[&task_config.model]
 			.threads_per_session
 			.unwrap_or(DEFAULT_THREADS_PER_SESSION);
+
+		if let Some(ref prelude_prompt) = task_config.prelude {
+			tracing::debug!("feeding prelude prompt: '{prelude_prompt}'");
+			session.feed_prompt(
+				model.as_ref().as_ref(),
+				&inference_parameters,
+				Prompt::Text(&prelude_prompt.clone()),
+				&mut OutputRequest::default(),
+				|r| -> Result<InferenceFeedback, GenerateError> {
+					tracing::trace!("Feed prompt: received {r:?}");
+					Ok(InferenceFeedback::Continue)
+				},
+			)?;
+		}
 
 		Ok(BackendSession {
 			model: model.clone(),

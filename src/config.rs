@@ -37,7 +37,14 @@ pub struct ModelConfig {
 #[derive(Deserialize, Debug, Clone)]
 pub struct TaskConfig {
 	pub model: String,
+
+	/// Text to start each conversation with
+	pub prelude: Option<String>,
+
+	/// Text to prefix each user input with
 	pub prefix: Option<String>,
+
+	/// Text to postfix each user input with
 	pub postfix: Option<String>,
 }
 
