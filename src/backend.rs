@@ -32,12 +32,19 @@ impl BackendSession {
 		mut callback: impl FnMut(InferenceResponse) -> Result<InferenceFeedback, GenerateError>,
 	) -> Result<InferenceStats, GenerateError> {
 		// Generate tokens (prefix + prompt + postfix)
-		let beginning_of_sentence = self.session.n_past == 0;
-		let mut tokens =
-			Prompt::Text(self.task_config.prefix.as_ref().unwrap_or(&String::from(""))).to_tokens(self.model.vocabulary(), beginning_of_sentence)?;
+		tracing::debug!("beginning-of-text token is {:?}", self.model.bot_token_id());
+		let beginning_of_sentence = self.model.bot_token_id().is_some() && self.session.n_past == 0;
+		let mut tokens = vec![];
+
+		// Append prefix tokens
+		if let Some(ref prefix) = self.task_config.prefix {
+			tokens.append(&mut Prompt::Text(prefix).to_tokens(self.model.vocabulary(), beginning_of_sentence)?);
+		}
+
+		// Generate user prompt tokens
 		let mut user_tokens = Prompt::Text(&request.prompt).to_tokens(self.model.vocabulary(), beginning_of_sentence && tokens.is_empty())?;
 
-		// Check for private tokens
+		// Check for private tokens in user prompt
 		let private_tokens = self.task_config.private_tokens.clone().unwrap_or(vec![]);
 		if !private_tokens.is_empty() {
 			let private_token_ids: Vec<u32> = private_tokens
@@ -55,9 +62,13 @@ impl BackendSession {
 			}
 		}
 		tokens.append(&mut user_tokens);
-		let mut postfix_tokens = Prompt::Text(self.task_config.postfix.as_ref().unwrap_or(&String::from("")))
-			.to_tokens(self.model.vocabulary(), beginning_of_sentence && tokens.is_empty())?;
-		tokens.append(&mut postfix_tokens);
+
+		// Append postfix tokens
+		if let Some(ref postfix) = self.task_config.postfix {
+			tokens.append(&mut Prompt::Text(postfix).to_tokens(self.model.vocabulary(), beginning_of_sentence && tokens.is_empty())?);
+		}
+
+		tracing::trace!("tokens: {tokens:?}");
 
 		let stats = self.session.infer(
 			self.model.as_ref().as_ref(),
