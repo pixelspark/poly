@@ -26,26 +26,26 @@ cargo run --release
 To generate completions:
 
 ```sh
-curl -XPOST --url http://localhost:3000/task/pythia/completion --header 'Content-type: application/json' --data '{"prompt": "Hello "}' -vvv
+curl -XPOST --url http://localhost:3000/v1/task/pythia/completion --header 'Content-type: application/json' --data '{"prompt": "Hello "}' -vvv
 ```
 
 To stream completions as they are generated:
 
 ```sh
-curl --url "http://localhost:3000/task/pythia/live?prompt=foo&max_tokens=10" -vvv
+curl --url "http://localhost:3000/v1/task/pythia/live?prompt=foo&max_tokens=10" -vvv
 ```
 
 To generate embeddings:
 
 ```sh
-curl -XPOST --url http://localhost:3000/task/pythia/embedding --header 'Content-type: application/json' --data '{"prompt": "Hello "}' -vvv
+curl -XPOST --url http://localhost:3000/v1/task/pythia/embedding --header 'Content-type: application/json' --data '{"prompt": "Hello "}' -vvv
 ```
 
 ### WebSocket chat API
 
 To chat, connect through WebSocket to the following endpoint:
 
-`ws://localhost:3000/task/pythia/chat?api_key=<key>`
+`ws://localhost:3000/v1/task/pythia/chat?api_key=<key>`
 
 Send messages as text frames, and receive individual token messages. When a message is finished, the server will send an
 empty text frame.

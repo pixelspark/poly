@@ -44,12 +44,12 @@ const prompt = ref("");
 const results = ref([]) as Ref<any[]>;
 
 async function reload() {
-  models.value = (await get("model")).models;
+  models.value = (await get("v1/model")).models;
 }
 
 async function run() {
   const res = await post(
-    "model/" + encodeURIComponent(model.value) + "/embedding",
+    "v1/model/" + encodeURIComponent(model.value) + "/embedding",
     { prompt: prompt.value }
   );
 

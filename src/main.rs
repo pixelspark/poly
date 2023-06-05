@@ -97,23 +97,27 @@ async fn main() {
 		.nest_service("/", ServeDir::new("client/dist/"))
 		.route("/status", get(status_handler))
 		.nest(
-			"/model",
+			"/v1",
 			Router::new()
-				.route("/", get(models_handler))
-				.route("/:model/embedding", post(post_model_embedding_handler))
-				.route("/:model/embedding", get(get_model_embedding_handler))
-				.layer(axum::middleware::from_fn_with_state(state.clone(), authorize)),
-		)
-		.nest(
-			"/task",
-			Router::new()
-				.route("/", get(tasks_handler))
-				.route("/:task/chat", get(ws_task_handler))
-				.route("/:task/status", get(status_with_user_handler))
-				.route("/:task/live", get(sse_task_handler))
-				.route("/:task/completion", post(post_task_completion_handler))
-				.route("/:task/completion", get(get_task_completion_handler))
-				.layer(axum::middleware::from_fn_with_state(state.clone(), authorize)),
+				.nest(
+					"/model",
+					Router::new()
+						.route("/", get(models_handler))
+						.route("/:model/embedding", post(post_model_embedding_handler))
+						.route("/:model/embedding", get(get_model_embedding_handler))
+						.layer(axum::middleware::from_fn_with_state(state.clone(), authorize)),
+				)
+				.nest(
+					"/task",
+					Router::new()
+						.route("/", get(tasks_handler))
+						.route("/:task/chat", get(ws_task_handler))
+						.route("/:task/status", get(status_with_user_handler))
+						.route("/:task/live", get(sse_task_handler))
+						.route("/:task/completion", post(post_task_completion_handler))
+						.route("/:task/completion", get(get_task_completion_handler))
+						.layer(axum::middleware::from_fn_with_state(state.clone(), authorize)),
+				),
 		)
 		.layer(cors_layer)
 		.layer(ConcurrencyLimitLayer::new(state.config.max_concurrent))

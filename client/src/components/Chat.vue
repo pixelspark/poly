@@ -78,7 +78,7 @@ function connect() {
   close();
   messages.value = [];
   const url = new URL(
-    "task/" + encodeURIComponent(task.value) + "/chat",
+    "v1/task/" + encodeURIComponent(task.value) + "/chat",
     base.value
   );
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -108,7 +108,7 @@ function connect() {
 }
 
 async function reload() {
-  tasks.value = (await get("task")).tasks;
+  tasks.value = (await get("v1/task")).tasks;
 }
 
 onMounted(async () => {

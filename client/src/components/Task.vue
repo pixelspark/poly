@@ -64,14 +64,14 @@ function stop() {
 }
 
 async function reload() {
-  tasks.value = (await get("task")).tasks;
+  tasks.value = (await get("v1/task")).tasks;
 }
 
 function run() {
   stop();
   response.value = "";
   const url = new URL(
-    "task/" + encodeURIComponent(task.value) + "/live",
+    "v1/task/" + encodeURIComponent(task.value) + "/live",
     base.value
   );
   url.searchParams.append("prompt", prompt.value);
