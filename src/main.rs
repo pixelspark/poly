@@ -1,5 +1,6 @@
 mod api;
 mod backend;
+pub mod bias;
 mod config;
 
 use crate::backend::Backend;
