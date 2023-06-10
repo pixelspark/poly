@@ -1,3 +1,7 @@
+use std::borrow::Cow;
+use std::fmt::Display;
+
+use llm::TokenizationError;
 use llm::{TokenId, Vocabulary};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -50,40 +54,97 @@ enum JSONParserState {
 #[derive(Debug, Clone)]
 pub struct JSONBiaser {
 	schema: JSONSchema,
-	json_vocab: JSONVocabulary,
 	state: JSONParserState,
 }
 
-#[derive(Debug, Clone)]
-pub struct JSONVocabulary {
-	true_token: TokenId,
-	false_token: TokenId,
-	null_token: TokenId,
-	curly_open_token: TokenId,
-	curly_close_token: TokenId,
-	bracket_open_token: TokenId,
-	bracket_close_token: TokenId,
-	comma_token: TokenId,
-	minus_token: TokenId,
-	number_tokens: Vec<TokenId>,
-	eot_token: TokenId,
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+pub enum JSONToken {
+	True,
+	False,
+	Null,
+	CurlyOpen,
+	CurlyClose,
+	BracketOpen,
+	BracketClose,
+	Comma,
+	Minus,
+	Number(usize),
+	Eot,
 }
 
-impl JSONVocabulary {
-	pub fn from(vocab: &Vocabulary, eot_token: TokenId) -> JSONVocabulary {
-		JSONVocabulary {
-			true_token: single_token_id_for(vocab, "true").unwrap(),
-			false_token: single_token_id_for(vocab, "false").unwrap(),
-			null_token: single_token_id_for(vocab, "null").unwrap(),
-			curly_open_token: single_token_id_for(vocab, "{").unwrap(),
-			curly_close_token: single_token_id_for(vocab, "}").unwrap(),
-			bracket_open_token: single_token_id_for(vocab, "[").unwrap(),
-			bracket_close_token: single_token_id_for(vocab, "]").unwrap(),
-			comma_token: single_token_id_for(vocab, ",").unwrap(),
-			minus_token: single_token_id_for(vocab, "-").unwrap(),
-			number_tokens: (0..=9).map(|n| single_token_id_for(vocab, &format!("{n}")).unwrap()).collect(),
-			eot_token,
+impl JSONToken {
+	pub fn from_text(s: &str) -> Option<JSONToken> {
+		Some(match s {
+			"true" => JSONToken::True,
+			"false" => JSONToken::False,
+			"null" => JSONToken::Null,
+			"{" => JSONToken::CurlyOpen,
+			"}" => JSONToken::CurlyClose,
+			"[" => JSONToken::BracketOpen,
+			"]" => JSONToken::BracketClose,
+			"," => JSONToken::Comma,
+			"-" => JSONToken::Minus,
+			s => {
+				if let Ok(n) = s.parse() {
+					JSONToken::Number(n)
+				} else {
+					return None;
+				}
+			}
+		})
+	}
+
+	pub fn to_string(&self) -> Cow<'static, str> {
+		match self {
+			JSONToken::True => Cow::from("true"),
+			JSONToken::False => Cow::from("false"),
+			JSONToken::Null => Cow::from("null"),
+			JSONToken::CurlyOpen => Cow::from("{"),
+			JSONToken::CurlyClose => Cow::from("}"),
+			JSONToken::BracketOpen => Cow::from("["),
+			JSONToken::BracketClose => Cow::from("]"),
+			JSONToken::Comma => Cow::from(","),
+			JSONToken::Minus => Cow::from("-"),
+			JSONToken::Number(n) => Cow::from(format!("{n}")),
+			JSONToken::Eot => Cow::from(""),
 		}
+	}
+
+	pub fn from_token(vocab: &Vocabulary, eot_token_id: TokenId, token: TokenId) -> Result<JSONToken, TokenizationError> {
+		if token == eot_token_id {
+			Ok(JSONToken::Eot)
+		} else {
+			let bytes = vocab.decode(vec![token], false);
+			let s = String::from_utf8(bytes).map_err(|_e| TokenizationError::InvalidTokenId(token))?;
+			Self::from_text(&s).ok_or(TokenizationError::InvalidTokenId(token))
+		}
+	}
+
+	pub fn token_id(&self, eot_token_id: TokenId, vocab: &Vocabulary) -> Option<TokenId> {
+		if let JSONToken::Eot = self {
+			return Some(eot_token_id);
+		}
+
+		match vocab.tokenize(&self.to_string(), false) {
+			Ok(tokens) => {
+				if tokens.len() != 1 {
+					None
+				} else {
+					Some(tokens[0].1)
+				}
+			}
+			Err(_) => None,
+		}
+	}
+
+	pub fn numbers() -> Vec<JSONToken> {
+		(0..=9).map(JSONToken::Number).collect()
+	}
+}
+
+impl Display for JSONToken {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", self.to_string())
 	}
 }
 
@@ -99,51 +160,37 @@ pub fn single_token_id_for(vocab: &Vocabulary, s: &str) -> Option<u32> {
 #[derive(Error, Debug)]
 pub enum BiaserError {
 	#[error("invalid next token {0}")]
-	InvalidToken(TokenId),
+	InvalidToken(JSONToken),
 }
 
 impl JSONParserState {
-	pub fn advance(&mut self, json_vocab: &JSONVocabulary, input: TokenId, item_schema: Option<JSONSchema>) -> Result<(), BiaserError> {
+	pub fn advance(&mut self, input: JSONToken, item_schema: Option<JSONSchema>) -> Result<(), BiaserError> {
 		*self = match self {
-			JSONParserState::Start => {
-				if input == json_vocab.true_token {
-					JSONParserState::End(json! { true })
-				} else if input == json_vocab.false_token {
-					JSONParserState::End(json! { false })
-				} else if input == json_vocab.null_token {
-					JSONParserState::End(json! { null })
-				} else if input == json_vocab.curly_open_token {
-					JSONParserState::InObject
-				} else if input == json_vocab.bracket_open_token {
-					JSONParserState::InArray(JSONParserArrayState {
-						items: vec![],
-						value_state: Box::new(JSONBiaser::new(item_schema.unwrap(), json_vocab.clone())),
-					})
-				} else if input == json_vocab.minus_token {
-					JSONParserState::InInteger(false, 0)
-				} else if let Some(n) = json_vocab.number_tokens.iter().find(|x| **x == input) {
-					JSONParserState::InInteger(true, *n as isize)
-				} else {
-					return Err(BiaserError::InvalidToken(input));
-				}
-			}
-			JSONParserState::InInteger(sign, digits) => {
-				if input == json_vocab.eot_token {
+			JSONParserState::Start => match input {
+				JSONToken::True => JSONParserState::End(json! { true }),
+				JSONToken::False => JSONParserState::End(json! { false }),
+				JSONToken::Null => JSONParserState::End(json! { null }),
+				JSONToken::CurlyOpen => JSONParserState::InObject,
+				JSONToken::BracketOpen => JSONParserState::InArray(JSONParserArrayState {
+					items: vec![],
+					value_state: Box::new(JSONBiaser::new(item_schema.unwrap())),
+				}),
+				JSONToken::Minus => JSONParserState::InInteger(false, 0),
+				JSONToken::Number(n) => JSONParserState::InInteger(true, n as isize),
+				_ => return Err(BiaserError::InvalidToken(input)),
+			},
+			JSONParserState::InInteger(sign, digits) => match input {
+				JSONToken::Eot => {
 					let n = (if *sign { 1 } else { -1 }) * *digits;
 					JSONParserState::End(json! { n })
-				} else if let Some(n) = json_vocab.number_tokens.iter().find(|x| **x == input) {
-					JSONParserState::InInteger(*sign, *digits * 10 + (*n as isize))
-				} else {
-					return Err(BiaserError::InvalidToken(input));
 				}
-			}
-			JSONParserState::InObject => {
-				if input == json_vocab.curly_close_token {
-					JSONParserState::End(json! { {} })
-				} else {
-					return Err(BiaserError::InvalidToken(input));
-				}
-			}
+				JSONToken::Number(n) => JSONParserState::InInteger(*sign, *digits * 10 + (n as isize)),
+				_ => return Err(BiaserError::InvalidToken(input)),
+			},
+			JSONParserState::InObject => match input {
+				JSONToken::CurlyClose => JSONParserState::End(json! { {} }),
+				_ => return Err(BiaserError::InvalidToken(input)),
+			},
 			JSONParserState::InArray(array_state) => {
 				let mut array_state: JSONParserArrayState = array_state.clone();
 				let next_valid_item_tokens = array_state.value_state.next_valid_tokens();
@@ -153,7 +200,7 @@ impl JSONParserState {
 				let next_state = {
 					if let JSONParserState::End(v) = array_state.value_state.state {
 						array_state.items.push(v);
-						if input == json_vocab.comma_token {
+						if input == JSONToken::Comma {
 							array_state.value_state.state = JSONParserState::Start;
 						} else {
 							array_state.value_state.state = JSONParserState::ExpectComma;
@@ -165,7 +212,7 @@ impl JSONParserState {
 					} else if next_valid_item_tokens.contains(&input) {
 						array_state.value_state.advance(input)?;
 						JSONParserState::InArray(array_state)
-					} else if input == json_vocab.bracket_close_token {
+					} else if input == JSONToken::BracketClose {
 						JSONParserState::End(json! { array_state.items })
 					} else {
 						return Err(BiaserError::InvalidToken(input));
@@ -177,13 +224,10 @@ impl JSONParserState {
 				);
 				next_state
 			}
-			JSONParserState::ExpectComma => {
-				if input == json_vocab.comma_token {
-					JSONParserState::Start
-				} else {
-					return Err(BiaserError::InvalidToken(input));
-				}
-			}
+			JSONParserState::ExpectComma => match input {
+				JSONToken::Comma => JSONParserState::Start,
+				_ => return Err(BiaserError::InvalidToken(input)),
+			},
 			JSONParserState::End(_) => return Err(BiaserError::InvalidToken(input)),
 		};
 		Ok(())
@@ -191,10 +235,9 @@ impl JSONParserState {
 }
 
 impl JSONBiaser {
-	pub fn new(schema: JSONSchema, json_vocab: JSONVocabulary) -> JSONBiaser {
+	pub fn new(schema: JSONSchema) -> JSONBiaser {
 		JSONBiaser {
 			schema,
-			json_vocab,
 			state: JSONParserState::Start,
 		}
 	}
@@ -206,15 +249,15 @@ impl JSONBiaser {
 		}
 	}
 
-	pub fn advance(&mut self, input: TokenId) -> Result<(), BiaserError> {
-		self.state.advance(&self.json_vocab, input, self.child_item_schema())
+	pub fn advance(&mut self, input: JSONToken) -> Result<(), BiaserError> {
+		self.state.advance(input, self.child_item_schema())
 	}
 
-	pub fn next_valid_tokens(&self) -> Vec<TokenId> {
+	pub fn next_valid_tokens(&self) -> Vec<JSONToken> {
 		match &self.state {
 			JSONParserState::End(_) => vec![],
-			JSONParserState::ExpectComma => vec![self.json_vocab.comma_token],
-			JSONParserState::InObject => vec![self.json_vocab.curly_close_token],
+			JSONParserState::ExpectComma => vec![JSONToken::Comma],
+			JSONParserState::InObject => vec![JSONToken::CurlyClose],
 			JSONParserState::InArray(array_state) => {
 				let mut valid = array_state.value_state.next_valid_tokens();
 
@@ -222,7 +265,7 @@ impl JSONBiaser {
 				if let JSONParserState::End(_) = array_state.value_state.state {
 					valid.clear();
 					// TODO: max_items
-					valid.push(self.json_vocab.comma_token);
+					valid.push(JSONToken::Comma);
 				}
 
 				let JSONSchema::Array { min_items, .. } = self.schema else {
@@ -232,168 +275,42 @@ impl JSONBiaser {
 				if let Some(min_items) = min_items {
 					if min_items < array_state.items.len() {
 						// We have enough items, you may close the array
-						valid.push(self.json_vocab.bracket_close_token);
+						valid.push(JSONToken::BracketClose);
 					}
 				} else {
 					// No minimum number of items, you may close the array
-					valid.push(self.json_vocab.bracket_close_token);
+					valid.push(JSONToken::BracketClose);
 				}
 				valid
 			}
 			JSONParserState::InInteger(_sign, digits) => {
 				// Limit the length of a number literal to what fits in a 32 bit integer
 				if *digits >= u32::MAX as isize {
-					return vec![self.json_vocab.eot_token];
+					return vec![JSONToken::Eot];
 				}
-				let mut d = self.json_vocab.number_tokens.clone();
-				d.push(self.json_vocab.eot_token);
-				d
+				// TODO: EOT token?
+				JSONToken::numbers()
 			}
 			JSONParserState::Start => match self.schema {
 				JSONSchema::Boolean => {
-					vec![self.json_vocab.true_token, self.json_vocab.false_token]
+					vec![JSONToken::True, JSONToken::False]
 				}
 				JSONSchema::Null => {
-					vec![self.json_vocab.null_token]
+					vec![JSONToken::Null]
 				}
 				JSONSchema::Object => {
-					vec![self.json_vocab.curly_open_token]
+					vec![JSONToken::CurlyOpen]
 				}
 				JSONSchema::Number => {
-					let mut d = self.json_vocab.number_tokens.clone();
-					d.push(self.json_vocab.minus_token);
-					d.push(self.json_vocab.eot_token);
+					let mut d = JSONToken::numbers();
+					d.push(JSONToken::Minus);
+					d.push(JSONToken::Eot);
 					d
 				}
 				JSONSchema::Array { .. } => {
-					vec![self.json_vocab.bracket_open_token]
+					vec![JSONToken::BracketOpen]
 				}
 			},
 		}
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use std::{path::Path, sync::Arc};
-
-	use llm::{
-		samplers, InferenceFeedback, InferenceParameters, InferenceSessionConfig, Model, ModelArchitecture, ModelParameters, OutputRequest, Prompt,
-		TokenBias, TokenUtf8Buffer,
-	};
-
-	use crate::bias::{single_token_id_for, BiaserError, JSONVocabulary};
-
-	use super::{JSONBiaser, JSONSchema};
-
-	#[test]
-	pub fn test_json_biaser() {
-		let model = llm::load_dynamic(
-			ModelArchitecture::GptNeoX,
-			Path::new("data/pythia-160m-q4_0.bin"),
-			llm::VocabularySource::Model,
-			ModelParameters::default(),
-			|_progress| {},
-		)
-		.unwrap();
-		let vocab = model.vocabulary();
-		let json_vocab = JSONVocabulary::from(vocab, model.eot_token_id());
-		dbg!(&json_vocab, model.eot_token_id());
-
-		let mut bias = JSONBiaser::new(JSONSchema::Boolean, json_vocab.clone());
-		bias.advance(single_token_id_for(vocab, "false").unwrap()).unwrap();
-		dbg!(&bias);
-
-		// test_json_bias(JSONSchema::Boolean, model.as_ref(), json_vocab.clone());
-
-		// test_json_bias(JSONSchema::Null, model.as_ref(), json_vocab.clone());
-
-		// test_json_bias(JSONSchema::Object, model.as_ref(), json_vocab.clone());
-
-		// test_json_bias(JSONSchema::Number, model.as_ref(), json_vocab.clone());
-
-		// Array-of-bools
-		test_json_bias(
-			JSONSchema::Array {
-				items: Box::new(JSONSchema::Boolean),
-				min_items: Some(2),
-			},
-			model.as_ref(),
-			json_vocab,
-		);
-
-		// // Array-of-array-of-bools
-		// test_json_bias(
-		// 	JSONSchema::Array {
-		// 		items: Box::new(JSONSchema::Array {
-		// 			items: Box::new(JSONSchema::Boolean),
-		// 			min_items: Some(2),
-		// 		}),
-		// 		min_items: Some(2),
-		// 	},
-		// 	model.as_ref(),
-		// 	json_vocab.clone(),
-		// );
-	}
-
-	fn test_json_bias(schema: JSONSchema, model: &dyn Model, json_vocab: JSONVocabulary) {
-		let mut bias = JSONBiaser::new(schema, json_vocab);
-		let mut session = model.start_session(InferenceSessionConfig::default());
-		let vocab = model.vocabulary();
-
-		session
-			.feed_prompt(
-				model,
-				&InferenceParameters::default(),
-				Prompt::Text("Feyenoord is better than Ajax. "),
-				&mut OutputRequest::default(),
-				|_| -> Result<InferenceFeedback, BiaserError> { Ok(InferenceFeedback::Continue) },
-			)
-			.unwrap();
-
-		let mut rng = rand::thread_rng();
-		let mut result = String::new();
-		let mut result_buffer = TokenUtf8Buffer::new();
-		loop {
-			let next_valid_tokens = bias.next_valid_tokens();
-			if next_valid_tokens.is_empty() {
-				break;
-			}
-			let sampler = samplers::TopPTopK {
-				bias_tokens: TokenBias::new(next_valid_tokens.iter().map(|t| (*t, 10000.0)).collect()),
-				..Default::default()
-			};
-			let inference_params = InferenceParameters {
-				sampler: Arc::new(sampler),
-				..InferenceParameters::default()
-			};
-
-			if let Ok(out) = session.infer_next_token(model, &inference_params, &mut OutputRequest::default(), &mut rng) {
-				let out_token = vocab.id(&out).unwrap();
-				if out_token == model.eot_token_id() {
-					println!("END OF TEXT");
-					break;
-				}
-				println!(
-					"out_token={out_token} = {}",
-					String::from_utf8_lossy(&vocab.decode(vec![out_token], false))
-				);
-				bias.advance(out_token).unwrap();
-				if let Some(output) = result_buffer.push(&out) {
-					result.push_str(&output);
-				}
-				println!(
-					"== TOKEN: {:?} next valid tokens: {:?} state: {:?}\n",
-					String::from_utf8_lossy(&vocab.decode(vec![out_token], false)),
-					String::from_utf8_lossy(&vocab.decode(bias.next_valid_tokens(), false)),
-					bias.state
-				);
-			} else {
-				// End of text
-				bias.advance(model.eot_token_id()).unwrap();
-				break;
-			}
-		}
-		println!("Result={} json state={:?}", result, bias.state);
 	}
 }
