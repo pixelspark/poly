@@ -25,8 +25,30 @@ threads_per_session = 8
 model = "pythia160m"
 
 [tasks.assistant]
+model = "mpt_chat"	# The model to use (must be specified above)
+prelude = "" # Prompt that is fed once per session to the model
+prefix = "<|im_start|>user\n" # Prompt that is fed before each user input (may be multiple in a chat)
+postfix = "<|im_end|><|im_start|>assistant\n" # answer<|im_end|> # Prompt that is appended to each user input
+private_tokens = ["<|im_start|>", "<|im_end|>"] # Tokens that should never be returned to the user nor accepted in input
+
+[tasks.true_or_false]
 model = "mpt_chat"
-prelude = ""
-prefix = "<|im_start|>user\n"
+prelude = "<|im_start|>system\nYou are given statements and determine whether it is true or false.<|im_end|>\n"
+prefix = "<|im_start|>user\nIs the following statement true or false: "
 postfix = "<|im_end|><|im_start|>assistant\n" # answer<|im_end|>
+
+# When configured, the model will be allowed to freely generate tokens (up to max_tokens) after being fed the prompt.
+# Then, the bias prompt will be fed, after which *biased* generation will be performed (using the schema specified).
+# Only the tokens generated during *biased* generation are returned. This helps the model 'reason' before output the
+# answer in a certain format.
+bias_prompt = "<|im_start|>system\nSay 'true' when the user statement was true, 'false' otherwise.<|im_start|>assistant\n"
 private_tokens = ["<|im_start|>", "<|im_end|>"]
+
+# JSON schema for the answer. Possible values are:
+# { type = "number", min = 0, max = 1000, max_decimals = 2 }
+# { type = "array", items = <any allowed schema>, min_items = 1, max_items = 10 }
+# { type = "boolean" }
+# { type = "null" }
+# { type = "object" } (currently produces an empty object always)
+schema = { type = "boolean" }
+temperature = 1
