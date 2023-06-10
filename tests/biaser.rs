@@ -3,7 +3,7 @@ use std::{path::Path, sync::Arc};
 
 use llm::{
 	samplers, InferenceFeedback, InferenceParameters, InferenceSessionConfig, Model, ModelArchitecture, ModelParameters, OutputRequest, Prompt,
-	TokenBias, TokenUtf8Buffer,
+	TokenBias, TokenId, TokenUtf8Buffer,
 };
 
 use llmd::bias::{BiaserError, JSONToken};
@@ -17,6 +17,32 @@ pub fn test_parser() {
 	let schema = JSONSchema::Boolean;
 	let bias = JSONBiaser::new(schema);
 	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::True, JSONToken::False]);
+}
+
+#[test]
+pub fn test_array_parser() {
+	let schema = JSONSchema::Array {
+		items: Box::new(JSONSchema::Boolean),
+		min_items: Some(2),
+	};
+	let mut bias = JSONBiaser::new(schema);
+
+	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::BracketOpen]);
+	bias.advance(JSONToken::BracketOpen).unwrap();
+	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::True, JSONToken::False]);
+	bias.advance(JSONToken::True).unwrap();
+	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::Comma]);
+	bias.advance(JSONToken::Comma).unwrap();
+	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::True, JSONToken::False]);
+	bias.advance(JSONToken::False).unwrap();
+	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::Comma, JSONToken::BracketClose]);
+	bias.advance(JSONToken::Comma).unwrap();
+	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::True, JSONToken::False]);
+	bias.advance(JSONToken::False).unwrap();
+	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::Comma, JSONToken::BracketClose]);
+	bias.advance(JSONToken::BracketClose).unwrap();
+	assert_eq!(bias.next_valid_tokens(), vec![]);
+	assert!(bias.can_end());
 }
 
 #[test]
@@ -46,17 +72,17 @@ pub fn test_json_biaser() {
 		model.as_ref(),
 	);
 
-	// // Array-of-array-of-bools
-	// test_json_bias(
-	// 	JSONSchema::Array {
-	// 		items: Box::new(JSONSchema::Array {
-	// 			items: Box::new(JSONSchema::Boolean),
-	// 			min_items: Some(2),
-	// 		}),
-	// 		min_items: Some(2),
-	// 	},
-	// 	model.as_ref()
-	// );
+	// Array-of-array-of-numbers
+	test_json_bias(
+		JSONSchema::Array {
+			items: Box::new(JSONSchema::Array {
+				items: Box::new(JSONSchema::Number),
+				min_items: Some(2),
+			}),
+			min_items: Some(2),
+		},
+		model.as_ref(),
+	);
 }
 
 fn test_json_bias(schema: JSONSchema, model: &dyn Model) {
@@ -77,23 +103,23 @@ fn test_json_bias(schema: JSONSchema, model: &dyn Model) {
 	let mut rng = rand::rngs::StdRng::seed_from_u64(1337); // Deterministic for tests
 	let mut result = String::new();
 	let mut result_buffer = TokenUtf8Buffer::new();
+
 	loop {
 		let next_valid_tokens = bias.next_valid_tokens();
 		if next_valid_tokens.is_empty() {
 			break;
 		}
+
+		let mut next_valid_tokens: Vec<(TokenId, f32)> = next_valid_tokens
+			.iter()
+			.map(|t| (t.token_id(vocab).unwrap_or_else(|| panic!("token id for {t}")), 10000.0))
+			.collect();
+		if bias.can_end() {
+			next_valid_tokens.push((model.eot_token_id(), 10000.0));
+		}
+
 		let sampler = samplers::TopPTopK {
-			bias_tokens: TokenBias::new(
-				next_valid_tokens
-					.iter()
-					.map(|t| {
-						(
-							t.token_id(model.eot_token_id(), vocab).unwrap_or_else(|| panic!("token id for {t}")),
-							10000.0,
-						)
-					})
-					.collect(),
-			),
+			bias_tokens: TokenBias::new(next_valid_tokens),
 			..Default::default()
 		};
 		let inference_params = InferenceParameters {
@@ -103,12 +129,11 @@ fn test_json_bias(schema: JSONSchema, model: &dyn Model) {
 
 		if let Ok(out) = session.infer_next_token(model, &inference_params, &mut OutputRequest::default(), &mut rng) {
 			let out_token = vocab.id(&out).unwrap();
-			let out_json_token = JSONToken::from_token(vocab, model.eot_token_id(), out_token).expect("valid token");
-
-			if let JSONToken::Eot = out_json_token {
-				println!("End of text");
+			if out_token == model.eot_token_id() {
+				println!("EOT token");
 				break;
 			}
+			let out_json_token = JSONToken::from_token(vocab, out_token).expect("valid token");
 
 			bias.advance(out_json_token).expect("advance");
 			if let Some(output) = result_buffer.push(&out) {
@@ -121,7 +146,6 @@ fn test_json_bias(schema: JSONSchema, model: &dyn Model) {
 			);
 		} else {
 			// End of text
-			bias.advance(JSONToken::Eot).unwrap();
 			break;
 		}
 	}

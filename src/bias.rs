@@ -17,6 +17,26 @@ pub enum JSONSchema {
 	Array { items: Box<JSONSchema>, min_items: Option<usize> },
 }
 
+impl JSONSchema {
+	pub fn is_valid(&self, value: &Value) -> bool {
+		match (self, value) {
+			(JSONSchema::Boolean, Value::Bool(_)) => true,
+			(JSONSchema::Null, Value::Null) => true,
+			(JSONSchema::Object, Value::Object(_)) => true,
+			(JSONSchema::Array { items, min_items }, Value::Array(array_items)) => {
+				if let Some(min_items) = min_items {
+					if *min_items > array_items.len() {
+						return false;
+					}
+				}
+				return array_items.iter().all(|item| items.is_valid(item));
+			}
+			(JSONSchema::Number, Value::Number(_)) => true,
+			_ => false,
+		}
+	}
+}
+
 #[derive(Clone)]
 struct JSONParserArrayState {
 	items: Vec<Value>,
@@ -41,11 +61,8 @@ enum JSONParserState {
 	/// Array opening bracket encountered
 	InArray(JSONParserArrayState),
 
-	/// Expect a comma for the next array item
-	ExpectComma,
-
 	/// Inside an integer (true = positive, false = negative)
-	InInteger(bool, isize),
+	InInteger(String),
 
 	/// JSON value is finished, no further input acceptable
 	End(Value),
@@ -69,7 +86,6 @@ pub enum JSONToken {
 	Comma,
 	Minus,
 	Number(usize),
-	Eot,
 }
 
 impl JSONToken {
@@ -106,25 +122,16 @@ impl JSONToken {
 			JSONToken::Comma => Cow::from(","),
 			JSONToken::Minus => Cow::from("-"),
 			JSONToken::Number(n) => Cow::from(format!("{n}")),
-			JSONToken::Eot => Cow::from(""),
 		}
 	}
 
-	pub fn from_token(vocab: &Vocabulary, eot_token_id: TokenId, token: TokenId) -> Result<JSONToken, TokenizationError> {
-		if token == eot_token_id {
-			Ok(JSONToken::Eot)
-		} else {
-			let bytes = vocab.decode(vec![token], false);
-			let s = String::from_utf8(bytes).map_err(|_e| TokenizationError::InvalidTokenId(token))?;
-			Self::from_text(&s).ok_or(TokenizationError::InvalidTokenId(token))
-		}
+	pub fn from_token(vocab: &Vocabulary, token: TokenId) -> Result<JSONToken, TokenizationError> {
+		let bytes = vocab.decode(vec![token], false);
+		let s = String::from_utf8(bytes).map_err(|_e| TokenizationError::InvalidTokenId(token))?;
+		Self::from_text(&s).ok_or(TokenizationError::InvalidTokenId(token))
 	}
 
-	pub fn token_id(&self, eot_token_id: TokenId, vocab: &Vocabulary) -> Option<TokenId> {
-		if let JSONToken::Eot = self {
-			return Some(eot_token_id);
-		}
-
+	pub fn token_id(&self, vocab: &Vocabulary) -> Option<TokenId> {
 		match vocab.tokenize(&self.to_string(), false) {
 			Ok(tokens) => {
 				if tokens.len() != 1 {
@@ -148,15 +155,6 @@ impl Display for JSONToken {
 	}
 }
 
-pub fn single_token_id_for(vocab: &Vocabulary, s: &str) -> Option<u32> {
-	let ts = vocab.tokenize(s, false).unwrap();
-	if ts.len() != 1 {
-		None
-	} else {
-		Some(ts[0].1)
-	}
-}
-
 #[derive(Error, Debug)]
 pub enum BiaserError {
 	#[error("invalid next token {0}")]
@@ -164,6 +162,22 @@ pub enum BiaserError {
 }
 
 impl JSONParserState {
+	pub fn value(&self) -> Option<Value> {
+		match self {
+			JSONParserState::Start => None,
+			JSONParserState::InObject => Some(json!({})),
+			JSONParserState::InArray(array_state) => {
+				let mut items = array_state.items.clone();
+				if let Some(v) = array_state.value_state.state.value() {
+					items.push(v);
+				}
+				Some(Value::Array(items))
+			}
+			JSONParserState::InInteger(s) => Some(json! { s.parse::<f32>().unwrap() }),
+			JSONParserState::End(v) => Some(v.clone()),
+		}
+	}
+
 	pub fn advance(&mut self, input: JSONToken, item_schema: Option<JSONSchema>) -> Result<(), BiaserError> {
 		*self = match self {
 			JSONParserState::Start => match input {
@@ -175,16 +189,12 @@ impl JSONParserState {
 					items: vec![],
 					value_state: Box::new(JSONBiaser::new(item_schema.unwrap())),
 				}),
-				JSONToken::Minus => JSONParserState::InInteger(false, 0),
-				JSONToken::Number(n) => JSONParserState::InInteger(true, n as isize),
+				JSONToken::Minus => JSONParserState::InInteger(String::from("-")),
+				JSONToken::Number(n) => JSONParserState::InInteger(format!("{n}")),
 				_ => return Err(BiaserError::InvalidToken(input)),
 			},
-			JSONParserState::InInteger(sign, digits) => match input {
-				JSONToken::Eot => {
-					let n = (if *sign { 1 } else { -1 }) * *digits;
-					JSONParserState::End(json! { n })
-				}
-				JSONToken::Number(n) => JSONParserState::InInteger(*sign, *digits * 10 + (n as isize)),
+			JSONParserState::InInteger(num_string) => match input {
+				JSONToken::Number(n) => JSONParserState::InInteger(format!("{num_string}{n}")),
 				_ => return Err(BiaserError::InvalidToken(input)),
 			},
 			JSONParserState::InObject => match input {
@@ -195,39 +205,28 @@ impl JSONParserState {
 				let mut array_state: JSONParserArrayState = array_state.clone();
 				let next_valid_item_tokens = array_state.value_state.next_valid_tokens();
 
-				let old_array_state = array_state.value_state.state.clone();
-
-				let next_state = {
-					if let JSONParserState::End(v) = array_state.value_state.state {
-						array_state.items.push(v);
-						if input == JSONToken::Comma {
-							array_state.value_state.state = JSONParserState::Start;
-						} else {
-							array_state.value_state.state = JSONParserState::ExpectComma;
+				match input {
+					JSONToken::Comma if array_state.value_state.can_end() => {
+						if let Some(v) = array_state.value_state.state.value() {
+							array_state.items.push(v);
 						}
-						JSONParserState::InArray(array_state)
-					} else if let JSONParserState::ExpectComma = array_state.value_state.state {
 						array_state.value_state.state = JSONParserState::Start;
 						JSONParserState::InArray(array_state)
-					} else if next_valid_item_tokens.contains(&input) {
+					}
+					JSONToken::BracketClose if array_state.value_state.can_end() => {
+						if let Some(v) = array_state.value_state.state.value() {
+							array_state.items.push(v);
+						}
+						JSONParserState::End(Value::Array(array_state.items))
+					}
+					t if next_valid_item_tokens.contains(&t) => {
 						array_state.value_state.advance(input)?;
 						JSONParserState::InArray(array_state)
-					} else if input == JSONToken::BracketClose {
-						JSONParserState::End(json! { array_state.items })
-					} else {
-						return Err(BiaserError::InvalidToken(input));
 					}
-				};
-				println!(
-					"advance array {input:?}: array_state was ArrayState({:?}) => {:?}",
-					old_array_state, next_state
-				);
-				next_state
+					t => return Err(BiaserError::InvalidToken(t)),
+				}
 			}
-			JSONParserState::ExpectComma => match input {
-				JSONToken::Comma => JSONParserState::Start,
-				_ => return Err(BiaserError::InvalidToken(input)),
-			},
+
 			JSONParserState::End(_) => return Err(BiaserError::InvalidToken(input)),
 		};
 		Ok(())
@@ -253,42 +252,47 @@ impl JSONBiaser {
 		self.state.advance(input, self.child_item_schema())
 	}
 
+	pub fn can_end(&self) -> bool {
+		match self.state {
+			JSONParserState::Start => false,
+			JSONParserState::InObject => false,
+			JSONParserState::InArray(ref _array_state) => false,
+			JSONParserState::InInteger(ref s) => s.parse::<f32>().is_ok(),
+			JSONParserState::End(_) => true,
+		}
+	}
+
 	pub fn next_valid_tokens(&self) -> Vec<JSONToken> {
 		match &self.state {
 			JSONParserState::End(_) => vec![],
-			JSONParserState::ExpectComma => vec![JSONToken::Comma],
 			JSONParserState::InObject => vec![JSONToken::CurlyClose],
 			JSONParserState::InArray(array_state) => {
-				let mut valid = array_state.value_state.next_valid_tokens();
-
-				// If a value is done, we expect a comma first
-				if let JSONParserState::End(_) = array_state.value_state.state {
-					valid.clear();
-					// TODO: max_items
-					valid.push(JSONToken::Comma);
-				}
-
 				let JSONSchema::Array { min_items, .. } = self.schema else {
 					panic!();
 				};
 
-				if let Some(min_items) = min_items {
-					if min_items < array_state.items.len() {
-						// We have enough items, you may close the array
+				let mut valid = array_state.value_state.next_valid_tokens();
+
+				if array_state.value_state.can_end() {
+					// If the inner value can end (or must end, then valid = []), expect a comma
+					valid.push(JSONToken::Comma);
+
+					// If we have enough items, also allow bracket close
+					let has_enough_items = (array_state.items.len() + 1) >= min_items.unwrap_or(0);
+					if has_enough_items {
 						valid.push(JSONToken::BracketClose);
 					}
-				} else {
-					// No minimum number of items, you may close the array
-					valid.push(JSONToken::BracketClose);
 				}
+
 				valid
 			}
-			JSONParserState::InInteger(_sign, digits) => {
+			JSONParserState::InInteger(s) => {
 				// Limit the length of a number literal to what fits in a 32 bit integer
-				if *digits >= u32::MAX as isize {
-					return vec![JSONToken::Eot];
+				if let Ok(v) = s.parse::<f32>() {
+					if v >= (u32::MAX as f32) {
+						return vec![];
+					}
 				}
-				// TODO: EOT token?
 				JSONToken::numbers()
 			}
 			JSONParserState::Start => match self.schema {
@@ -304,7 +308,6 @@ impl JSONBiaser {
 				JSONSchema::Number => {
 					let mut d = JSONToken::numbers();
 					d.push(JSONToken::Minus);
-					d.push(JSONToken::Eot);
 					d
 				}
 				JSONSchema::Array { .. } => {
