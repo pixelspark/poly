@@ -66,7 +66,22 @@ pub fn test_json_biaser() {
 
 	test_json_bias(JSONSchema::Object, model.as_ref());
 
-	test_json_bias(JSONSchema::Number, model.as_ref());
+	test_json_bias(
+		JSONSchema::Number {
+			max_decimals: None,
+			min: None,
+			max: None,
+		},
+		model.as_ref(),
+	);
+	test_json_bias(
+		JSONSchema::Number {
+			max_decimals: Some(3),
+			min: None,
+			max: None,
+		},
+		model.as_ref(),
+	);
 
 	// Array-of-bools
 	test_json_bias(
@@ -82,7 +97,11 @@ pub fn test_json_biaser() {
 	test_json_bias(
 		JSONSchema::Array {
 			items: Box::new(JSONSchema::Array {
-				items: Box::new(JSONSchema::Number),
+				items: Box::new(JSONSchema::Number {
+					max_decimals: Some(2),
+					min: Some(-10.0),
+					max: Some(10.0),
+				}),
 				min_items: Some(2),
 				max_items: Some(4),
 			}),
@@ -150,16 +169,20 @@ fn test_json_bias(schema: JSONSchema, model: &dyn Model) {
 					result.push_str(&output);
 				}
 				println!(
-					"== TOKEN: {:?}, RESULT: {result}, next valid tokens: {:?}\n",
+					"Token: {:?}, RESULT: \"{result}\" next valid tokens: {:?}",
 					String::from_utf8_lossy(&vocab.decode(vec![out_token], false)),
-					bias.next_valid_tokens(),
+					bias.next_valid_tokens()
+						.iter()
+						.map(|x| x.to_string().to_string())
+						.collect::<Vec<String>>()
+						.join(" "),
 				);
 			} else {
 				// End of text
 				break;
 			}
 		}
-		println!("== FINISH {}\n\n", result);
+		println!("Finish: {}\n", result);
 		serde_json::from_str::<Value>(&result).expect("valid JSON");
 	}
 }

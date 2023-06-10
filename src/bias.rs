@@ -9,11 +9,16 @@ use serde_json::Value;
 use thiserror::Error;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(tag = "type")]
 pub enum JSONSchema {
 	Boolean,
 	Null,
 	Object,
-	Number,
+	Number {
+		min: Option<f64>,
+		max: Option<f64>,
+		max_decimals: Option<usize>,
+	},
 	Array {
 		items: Box<JSONSchema>,
 		min_items: Option<usize>,
@@ -41,7 +46,19 @@ impl JSONSchema {
 				}
 				return array_items.iter().all(|item| items.is_valid(item));
 			}
-			(JSONSchema::Number, Value::Number(_s)) => true,
+			(JSONSchema::Number { min, max, .. }, Value::Number(v)) => {
+				if let Some(min) = min {
+					if v.as_f64().unwrap() < *min {
+						return false;
+					}
+				}
+				if let Some(max) = max {
+					if v.as_f64().unwrap() > *max {
+						return false;
+					}
+				}
+				true
+			}
 			_ => false,
 		}
 	}
@@ -86,16 +103,17 @@ pub struct JSONBiaser {
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum JSONToken {
-	True,
-	False,
-	Null,
-	CurlyOpen,
-	CurlyClose,
-	BracketOpen,
 	BracketClose,
+	BracketOpen,
 	Comma,
+	CurlyClose,
+	CurlyOpen,
+	Decimal,
+	False,
 	Minus,
+	Null,
 	Number(usize),
+	True,
 }
 
 impl JSONToken {
@@ -104,6 +122,7 @@ impl JSONToken {
 			"true" => JSONToken::True,
 			"false" => JSONToken::False,
 			"null" => JSONToken::Null,
+			"." => JSONToken::Decimal,
 			"{" => JSONToken::CurlyOpen,
 			"}" => JSONToken::CurlyClose,
 			"[" => JSONToken::BracketOpen,
@@ -131,6 +150,7 @@ impl JSONToken {
 			JSONToken::BracketClose => Cow::from("]"),
 			JSONToken::Comma => Cow::from(","),
 			JSONToken::Minus => Cow::from("-"),
+			JSONToken::Decimal => Cow::from("."),
 			JSONToken::Number(n) => Cow::from(format!("{n}")),
 		}
 	}
@@ -201,6 +221,7 @@ impl JSONParserState {
 			},
 			JSONParserState::InInteger(num_string) => match input {
 				JSONToken::Number(n) => JSONParserState::InInteger(format!("{num_string}{n}")),
+				JSONToken::Decimal => JSONParserState::InInteger(format!("{num_string}.")),
 				_ => return Err(BiaserError::InvalidToken(input)),
 			},
 			JSONParserState::InObject => match input {
@@ -263,7 +284,7 @@ impl JSONBiaser {
 			JSONParserState::Start => false,
 			JSONParserState::InObject => false,
 			JSONParserState::InArray(ref _array_state) => false,
-			JSONParserState::InInteger(ref s) => s.parse::<f32>().is_ok(),
+			JSONParserState::InInteger(ref s) => !s.is_empty() && s.parse::<f32>().is_ok() && !s.ends_with('.'),
 			JSONParserState::End(_) => true,
 		}
 	}
@@ -295,19 +316,66 @@ impl JSONBiaser {
 				valid
 			}
 			JSONParserState::InInteger(s) => {
+				let JSONSchema::Number { max_decimals, min, max } = self.schema else {
+					panic!();
+				};
+				let max_decimals = max_decimals.unwrap_or(0);
+				let has_decimal = s.contains('.');
+
+				if max_decimals == 0 && has_decimal {
+					panic!("have decimal while not allowed");
+				}
+
 				// Limit the length of a number literal to what fits in a 32 bit integer
-				if let Ok(v) = s.parse::<f32>() {
-					if v >= (u32::MAX as f32) {
+				if let Ok(v) = s.parse::<f64>() {
+					if v >= (u32::MAX as f64) {
+						return vec![];
+					}
+					if let Some(max) = max {
+						if v >= max {
+							return vec![];
+						}
+
+						// Can't just add numbers if that would make us go over max
+						if !has_decimal && v * 10.0 > max {
+							return if max_decimals > 0 { vec![JSONToken::Decimal] } else { vec![] };
+						}
+
+						// TODO: if we have a decimal, we should limit adding digits after it
+					}
+
+					if let Some(min) = min {
+						if v <= min {
+							return vec![];
+						}
+
+						// Can't just add numbers if that would make us go over max
+						if !has_decimal && v * 10.0 < min {
+							return if max_decimals > 0 { vec![JSONToken::Decimal] } else { vec![] };
+						}
+
+						// TODO: if we have a decimal, we should limit adding digits after it
+					}
+				}
+
+				if s.contains('.') && max_decimals > 0 {
+					let decimals = s.split_once('.').unwrap().1;
+					if decimals.len() >= max_decimals {
 						return vec![];
 					}
 				}
 
 				// First digit cannot be zero
-				if s == "-" {
+				let mut digits: Vec<JSONToken> = if s == "-" {
 					(1..=9).map(JSONToken::Number).collect()
 				} else {
 					(0..=9).map(JSONToken::Number).collect()
+				};
+
+				if !has_decimal && max_decimals > 0 {
+					digits.push(JSONToken::Decimal);
 				}
+				digits
 			}
 			JSONParserState::Start => match self.schema {
 				JSONSchema::Boolean => {
@@ -319,7 +387,7 @@ impl JSONBiaser {
 				JSONSchema::Object => {
 					vec![JSONToken::CurlyOpen]
 				}
-				JSONSchema::Number => {
+				JSONSchema::Number { .. } => {
 					// First digit cannot be zero
 					let mut d: Vec<JSONToken> = (1..=9).map(JSONToken::Number).collect();
 					d.push(JSONToken::Minus);
