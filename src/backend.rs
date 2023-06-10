@@ -107,7 +107,6 @@ impl BackendSession {
 				repeat_penalty: self.task_config.repeat_penalty,
 				repetition_penalty_last_n: self.task_config.repetition_penalty_last_n,
 			};
-			tracing::info!("sampler={sampler:?}");
 
 			inference_params.sampler = Arc::new(sampler);
 
