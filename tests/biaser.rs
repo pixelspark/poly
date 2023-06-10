@@ -24,6 +24,7 @@ pub fn test_array_parser() {
 	let schema = JSONSchema::Array {
 		items: Box::new(JSONSchema::Boolean),
 		min_items: Some(2),
+		max_items: Some(3),
 	};
 	let mut bias = JSONBiaser::new(schema);
 
@@ -40,6 +41,10 @@ pub fn test_array_parser() {
 	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::True, JSONToken::False]);
 	bias.advance(JSONToken::False).unwrap();
 	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::Comma, JSONToken::BracketClose]);
+	bias.advance(JSONToken::Comma).unwrap();
+	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::True, JSONToken::False]);
+	bias.advance(JSONToken::False).unwrap();
+	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::BracketClose]);
 	bias.advance(JSONToken::BracketClose).unwrap();
 	assert_eq!(bias.next_valid_tokens(), vec![]);
 	assert!(bias.can_end());
@@ -68,6 +73,7 @@ pub fn test_json_biaser() {
 		JSONSchema::Array {
 			items: Box::new(JSONSchema::Boolean),
 			min_items: Some(2),
+			max_items: Some(5),
 		},
 		model.as_ref(),
 	);
@@ -78,77 +84,82 @@ pub fn test_json_biaser() {
 			items: Box::new(JSONSchema::Array {
 				items: Box::new(JSONSchema::Number),
 				min_items: Some(2),
+				max_items: Some(4),
 			}),
-			min_items: Some(2),
+			min_items: Some(1),
+			max_items: Some(3),
 		},
 		model.as_ref(),
 	);
 }
 
 fn test_json_bias(schema: JSONSchema, model: &dyn Model) {
-	let mut bias = JSONBiaser::new(schema);
-	let mut session = model.start_session(InferenceSessionConfig::default());
-	let vocab = model.vocabulary();
+	for seed in [1337, 1338, 1339] {
+		let mut rng = rand::rngs::StdRng::seed_from_u64(seed); // Deterministic for tests
 
-	session
-		.feed_prompt(
-			model,
-			&InferenceParameters::default(),
-			Prompt::Text("Feyenoord is better than Ajax. "),
-			&mut OutputRequest::default(),
-			|_| -> Result<InferenceFeedback, BiaserError> { Ok(InferenceFeedback::Continue) },
-		)
-		.unwrap();
+		let mut bias = JSONBiaser::new(schema.clone());
+		let mut session = model.start_session(InferenceSessionConfig::default());
+		let vocab = model.vocabulary();
 
-	let mut rng = rand::rngs::StdRng::seed_from_u64(1337); // Deterministic for tests
-	let mut result = String::new();
-	let mut result_buffer = TokenUtf8Buffer::new();
+		session
+			.feed_prompt(
+				model,
+				&InferenceParameters::default(),
+				Prompt::Text("Feyenoord is better than Ajax. "),
+				&mut OutputRequest::default(),
+				|_| -> Result<InferenceFeedback, BiaserError> { Ok(InferenceFeedback::Continue) },
+			)
+			.unwrap();
 
-	loop {
-		let next_valid_tokens = bias.next_valid_tokens();
-		if next_valid_tokens.is_empty() {
-			break;
-		}
+		let mut result = String::new();
+		let mut result_buffer = TokenUtf8Buffer::new();
 
-		let mut next_valid_tokens: Vec<(TokenId, f32)> = next_valid_tokens
-			.iter()
-			.map(|t| (t.token_id(vocab).unwrap_or_else(|| panic!("token id for {t}")), 10000.0))
-			.collect();
-		if bias.can_end() {
-			next_valid_tokens.push((model.eot_token_id(), 10000.0));
-		}
-
-		let sampler = samplers::TopPTopK {
-			bias_tokens: TokenBias::new(next_valid_tokens),
-			..Default::default()
-		};
-		let inference_params = InferenceParameters {
-			sampler: Arc::new(sampler),
-			..InferenceParameters::default()
-		};
-
-		if let Ok(out) = session.infer_next_token(model, &inference_params, &mut OutputRequest::default(), &mut rng) {
-			let out_token = vocab.id(&out).unwrap();
-			if out_token == model.eot_token_id() {
-				println!("EOT token");
+		loop {
+			let next_valid_tokens = bias.next_valid_tokens();
+			if next_valid_tokens.is_empty() {
 				break;
 			}
-			let out_json_token = JSONToken::from_token(vocab, out_token).expect("valid token");
 
-			bias.advance(out_json_token).expect("advance");
-			if let Some(output) = result_buffer.push(&out) {
-				result.push_str(&output);
+			let mut next_valid_tokens: Vec<(TokenId, f32)> = next_valid_tokens
+				.iter()
+				.map(|t| (t.token_id(vocab).unwrap_or_else(|| panic!("token id for {t}")), 10000.0))
+				.collect();
+			if bias.can_end() {
+				next_valid_tokens.push((model.eot_token_id(), 10000.0));
 			}
-			println!(
-				"== TOKEN: {:?}, RESULT: {result}, next valid tokens: {:?}\n",
-				String::from_utf8_lossy(&vocab.decode(vec![out_token], false)),
-				bias.next_valid_tokens(),
-			);
-		} else {
-			// End of text
-			break;
+
+			let sampler = samplers::TopPTopK {
+				bias_tokens: TokenBias::new(next_valid_tokens),
+				..Default::default()
+			};
+			let inference_params = InferenceParameters {
+				sampler: Arc::new(sampler),
+				..InferenceParameters::default()
+			};
+
+			if let Ok(out) = session.infer_next_token(model, &inference_params, &mut OutputRequest::default(), &mut rng) {
+				let out_token = vocab.id(&out).unwrap();
+				if out_token == model.eot_token_id() {
+					println!("EOT token");
+					break;
+				}
+				let out_json_token = JSONToken::from_token(vocab, out_token).expect("valid token");
+
+				bias.advance(out_json_token).expect("advance");
+				if let Some(output) = result_buffer.push(&out) {
+					result.push_str(&output);
+				}
+				println!(
+					"== TOKEN: {:?}, RESULT: {result}, next valid tokens: {:?}\n",
+					String::from_utf8_lossy(&vocab.decode(vec![out_token], false)),
+					bias.next_valid_tokens(),
+				);
+			} else {
+				// End of text
+				break;
+			}
 		}
+		println!("== FINISH {}\n\n", result);
+		serde_json::from_str::<Value>(&result).expect("valid JSON");
 	}
-	println!("== FINISH {}\n\n", result);
-	serde_json::from_str::<Value>(&result).expect("valid JSON");
 }

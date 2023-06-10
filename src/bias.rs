@@ -14,7 +14,11 @@ pub enum JSONSchema {
 	Null,
 	Object,
 	Number,
-	Array { items: Box<JSONSchema>, min_items: Option<usize> },
+	Array {
+		items: Box<JSONSchema>,
+		min_items: Option<usize>,
+		max_items: Option<usize>,
+	},
 }
 
 impl JSONSchema {
@@ -23,15 +27,21 @@ impl JSONSchema {
 			(JSONSchema::Boolean, Value::Bool(_)) => true,
 			(JSONSchema::Null, Value::Null) => true,
 			(JSONSchema::Object, Value::Object(_)) => true,
-			(JSONSchema::Array { items, min_items }, Value::Array(array_items)) => {
+			(JSONSchema::Array { items, min_items, max_items }, Value::Array(array_items)) => {
 				if let Some(min_items) = min_items {
 					if *min_items > array_items.len() {
 						return false;
 					}
 				}
+
+				if let Some(max_items) = max_items {
+					if *max_items < array_items.len() {
+						return false;
+					}
+				}
 				return array_items.iter().all(|item| items.is_valid(item));
 			}
-			(JSONSchema::Number, Value::Number(_)) => true,
+			(JSONSchema::Number, Value::Number(_s)) => true,
 			_ => false,
 		}
 	}
@@ -142,10 +152,6 @@ impl JSONToken {
 			}
 			Err(_) => None,
 		}
-	}
-
-	pub fn numbers() -> Vec<JSONToken> {
-		(0..=9).map(JSONToken::Number).collect()
 	}
 }
 
@@ -267,15 +273,17 @@ impl JSONBiaser {
 			JSONParserState::End(_) => vec![],
 			JSONParserState::InObject => vec![JSONToken::CurlyClose],
 			JSONParserState::InArray(array_state) => {
-				let JSONSchema::Array { min_items, .. } = self.schema else {
+				let JSONSchema::Array { min_items, max_items, .. } = self.schema else {
 					panic!();
 				};
 
 				let mut valid = array_state.value_state.next_valid_tokens();
 
 				if array_state.value_state.can_end() {
-					// If the inner value can end (or must end, then valid = []), expect a comma
-					valid.push(JSONToken::Comma);
+					// If the inner value can end (or must end, then valid = []), expect a comma (if we can accomodate more items)
+					if max_items.is_none() || (array_state.items.len() + 1) <= max_items.unwrap() {
+						valid.push(JSONToken::Comma);
+					}
 
 					// If we have enough items, also allow bracket close
 					let has_enough_items = (array_state.items.len() + 1) >= min_items.unwrap_or(0);
@@ -293,7 +301,13 @@ impl JSONBiaser {
 						return vec![];
 					}
 				}
-				JSONToken::numbers()
+
+				// First digit cannot be zero
+				if s == "-" {
+					(1..=9).map(JSONToken::Number).collect()
+				} else {
+					(0..=9).map(JSONToken::Number).collect()
+				}
 			}
 			JSONParserState::Start => match self.schema {
 				JSONSchema::Boolean => {
@@ -306,7 +320,8 @@ impl JSONBiaser {
 					vec![JSONToken::CurlyOpen]
 				}
 				JSONSchema::Number => {
-					let mut d = JSONToken::numbers();
+					// First digit cannot be zero
+					let mut d: Vec<JSONToken> = (1..=9).map(JSONToken::Number).collect();
 					d.push(JSONToken::Minus);
 					d
 				}
