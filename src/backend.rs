@@ -171,7 +171,7 @@ impl BackendSession {
 		// Set up biaser
 		let mut biaser: Box<dyn Biaser> = if let Some(ref schema) = self.task_config.schema {
 			// TODO: reference to schema, no clone
-			Box::new(JSONBiaser::new(schema.clone()))
+			Box::new(JSONBiaser::new(schema))
 		} else {
 			Box::new(NullBiaser {})
 		};

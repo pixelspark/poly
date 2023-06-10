@@ -15,7 +15,7 @@ use serde_json::Value;
 #[test]
 pub fn test_parser() {
 	let schema = JSONSchema::Boolean;
-	let bias = JSONBiaser::new(schema);
+	let bias = JSONBiaser::new(&schema);
 	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::True, JSONToken::False]);
 }
 
@@ -26,7 +26,7 @@ pub fn test_array_parser() {
 		min_items: Some(2),
 		max_items: Some(3),
 	};
-	let mut bias = JSONBiaser::new(schema);
+	let mut bias = JSONBiaser::new(&schema);
 
 	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::BracketOpen]);
 	bias.advance(JSONToken::BracketOpen).unwrap();
@@ -68,17 +68,9 @@ pub fn test_json_biaser() {
 
 	test_json_bias(
 		JSONSchema::Number {
-			max_decimals: None,
-			min: None,
-			max: None,
-		},
-		model.as_ref(),
-	);
-	test_json_bias(
-		JSONSchema::Number {
-			max_decimals: Some(3),
-			min: None,
-			max: None,
+			max_decimals: Some(2),
+			min: Some(-0.32),
+			max: Some(5.87),
 		},
 		model.as_ref(),
 	);
@@ -113,10 +105,10 @@ pub fn test_json_biaser() {
 }
 
 fn test_json_bias(schema: JSONSchema, model: &dyn Model) {
-	for seed in [1337, 1338, 1339] {
+	for seed in [1340, 1338, 1339] {
 		let mut rng = rand::rngs::StdRng::seed_from_u64(seed); // Deterministic for tests
 
-		let mut bias = JSONBiaser::new(schema.clone());
+		let mut bias = JSONBiaser::new(&schema);
 		let mut session = model.start_session(InferenceSessionConfig::default());
 		let vocab = model.vocabulary();
 

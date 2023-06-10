@@ -65,20 +65,20 @@ impl JSONSchema {
 }
 
 #[derive(Clone)]
-struct JSONParserArrayState {
+struct JSONParserArrayState<'schema> {
 	items: Vec<Value>,
-	value_state: Box<JSONBiaser>,
+	value_state: Box<JSONBiaser<'schema>>,
 }
 
 // Temp, to hide schema in logs
-impl std::fmt::Debug for JSONParserArrayState {
+impl<'schema> std::fmt::Debug for JSONParserArrayState<'schema> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("JSONParserArrayState").field("state", &self.value_state.state).finish()
 	}
 }
 
 #[derive(Debug, Clone)]
-enum JSONParserState {
+enum JSONParserState<'schema> {
 	/// No input received yet
 	Start,
 
@@ -86,7 +86,7 @@ enum JSONParserState {
 	InObject,
 
 	/// Array opening bracket encountered
-	InArray(JSONParserArrayState),
+	InArray(JSONParserArrayState<'schema>),
 
 	/// Inside an integer (true = positive, false = negative)
 	InInteger(String),
@@ -102,7 +102,7 @@ pub trait Biaser {
 	fn advance(&mut self, vocabulary: &Vocabulary, token: TokenId);
 }
 
-impl Biaser for JSONBiaser {
+impl<'schema> Biaser for JSONBiaser<'schema> {
 	fn bias(&self, vocabulary: &Vocabulary, eot_token: TokenId) -> Vec<(TokenId, f32)> {
 		let next_valid_json_tokens = self.next_valid_tokens();
 		tracing::trace!(
@@ -149,9 +149,9 @@ impl Biaser for NullBiaser {
 }
 
 #[derive(Debug, Clone)]
-pub struct JSONBiaser {
-	schema: JSONSchema,
-	state: JSONParserState,
+pub struct JSONBiaser<'schema> {
+	schema: &'schema JSONSchema,
+	state: JSONParserState<'schema>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
@@ -240,7 +240,7 @@ pub enum BiaserError {
 	InvalidToken(JSONToken),
 }
 
-impl JSONParserState {
+impl<'schema> JSONParserState<'schema> {
 	pub fn value(&self) -> Option<Value> {
 		match self {
 			JSONParserState::Start => None,
@@ -257,7 +257,7 @@ impl JSONParserState {
 		}
 	}
 
-	pub fn advance(&mut self, input: JSONToken, item_schema: Option<JSONSchema>) -> Result<(), BiaserError> {
+	pub fn advance(&mut self, input: JSONToken, item_schema: Option<&'schema JSONSchema>) -> Result<(), BiaserError> {
 		*self = match self {
 			JSONParserState::Start => match input {
 				JSONToken::True => JSONParserState::End(json! { true }),
@@ -313,17 +313,17 @@ impl JSONParserState {
 	}
 }
 
-impl JSONBiaser {
-	pub fn new(schema: JSONSchema) -> JSONBiaser {
+impl<'schema> JSONBiaser<'schema> {
+	pub fn new(schema: &'schema JSONSchema) -> JSONBiaser<'schema> {
 		JSONBiaser {
 			schema,
 			state: JSONParserState::Start,
 		}
 	}
 
-	fn child_item_schema(&self) -> Option<JSONSchema> {
+	fn child_item_schema(&self) -> Option<&'schema JSONSchema> {
 		match &self.schema {
-			JSONSchema::Array { items, .. } => Some(*items.clone()),
+			JSONSchema::Array { items, .. } => Some(items.as_ref()),
 			_ => None,
 		}
 	}
@@ -379,40 +379,7 @@ impl JSONBiaser {
 					panic!("have decimal while not allowed");
 				}
 
-				// Limit the length of a number literal to what fits in a 32 bit integer
-				if let Ok(v) = s.parse::<f64>() {
-					if v >= (u32::MAX as f64) {
-						return vec![];
-					}
-					if let Some(max) = max {
-						if v >= max {
-							return vec![];
-						}
-
-						// Can't just add numbers if that would make us go over max
-						// TODO: fix this logic
-						if !has_decimal && v * 10.0 >= max {
-							return if max_decimals > 0 { vec![JSONToken::Decimal] } else { vec![] };
-						}
-
-						// TODO: if we have a decimal, we should limit adding digits after it
-					}
-
-					if let Some(min) = min {
-						if v <= min {
-							return vec![];
-						}
-
-						// Can't just add numbers if that would make us go over max
-						// TODO: fix this logic
-						if !has_decimal && v * 10.0 <= min {
-							return if max_decimals > 0 { vec![JSONToken::Decimal] } else { vec![] };
-						}
-
-						// TODO: if we have a decimal, we should limit adding digits after it
-					}
-				}
-
+				// Check if we are below the set maximum number of decimals
 				if s.contains('.') && max_decimals > 0 {
 					let decimals = s.split_once('.').unwrap().1;
 					if decimals.len() >= max_decimals {
@@ -426,6 +393,41 @@ impl JSONBiaser {
 				} else {
 					(0..=9).map(JSONToken::Number).collect()
 				};
+
+				// Limit the length of a number literal to what fits in a 32 bit integer
+				if let Ok(v) = s.parse::<f64>() {
+					if v >= (u32::MAX as f64) {
+						return vec![];
+					}
+
+					if let Some(max) = max {
+						if v >= *max {
+							return vec![];
+						}
+
+						digits.retain_mut(|digit| {
+							// Try to append the digit and see if we still meet the minimum
+							match format!("{s}{}", digit).parse::<f64>() {
+								Err(_) => false,
+								Ok(v) => v <= *max,
+							}
+						});
+					}
+
+					if let Some(min) = min {
+						if v <= *min {
+							return vec![];
+						}
+
+						digits.retain_mut(|digit| {
+							// Try to append the digit and see if we still meet the minimum
+							match format!("{s}{}", digit).parse::<f64>() {
+								Err(_) => false,
+								Ok(v) => v >= *min,
+							}
+						});
+					}
+				}
 
 				if !has_decimal && max_decimals > 0 {
 					digits.push(JSONToken::Decimal);
@@ -444,7 +446,13 @@ impl JSONBiaser {
 				}
 				JSONSchema::Number { max, min, max_decimals: _ } => {
 					// First digit cannot be zero
-					let mut d: Vec<JSONToken> = (1..=9).map(JSONToken::Number).collect();
+					let mut d: Vec<JSONToken> = (1..=9)
+						.filter(|d| {
+							let df = *d as f64;
+							df <= max.unwrap_or(df) && df >= min.unwrap_or(df)
+						})
+						.map(JSONToken::Number)
+						.collect();
 
 					if min.unwrap_or(-1.0) < 0.0 || max.unwrap_or(-1.0) < 0.0 {
 						d.push(JSONToken::Minus);
