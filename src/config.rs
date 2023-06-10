@@ -3,6 +3,8 @@ use llm::ModelArchitecture;
 use serde::{Deserialize, Deserializer};
 use std::{collections::HashMap, path::PathBuf};
 
+use crate::bias::JSONSchema;
+
 fn architecture_from_str<'de, D>(deserializer: D) -> Result<ModelArchitecture, D::Error>
 where
 	D: Deserializer<'de>,
@@ -52,6 +54,44 @@ pub struct TaskConfig {
 
 	/// Tokens that users should not be able to input as they are used for signalling
 	pub private_tokens: Option<Vec<String>>,
+
+	/// Schema the response should adhere to (makes output be JSON)
+	pub schema: Option<JSONSchema>,
+
+	#[serde(default = "default_top_k")]
+	pub top_k: usize,
+
+	#[serde(default = "default_top_p")]
+	pub top_p: f32,
+
+	#[serde(default = "default_repeat_penalty")]
+	pub repeat_penalty: f32,
+
+	#[serde(default = "default_temperature")]
+	pub temperature: f32,
+
+	#[serde(default = "default_repetition_penalty_last_n")]
+	pub repetition_penalty_last_n: usize,
+}
+
+const fn default_top_k() -> usize {
+	40
+}
+
+const fn default_top_p() -> f32 {
+	0.95
+}
+
+const fn default_repeat_penalty() -> f32 {
+	1.30
+}
+
+const fn default_temperature() -> f32 {
+	0.80
+}
+
+const fn default_repetition_penalty_last_n() -> usize {
+	512
 }
 
 #[derive(Deserialize, Clone, Debug)]

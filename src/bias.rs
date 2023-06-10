@@ -9,7 +9,7 @@ use serde_json::Value;
 use thiserror::Error;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(tag = "type")]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum JSONSchema {
 	Boolean,
 	Null,
@@ -93,6 +93,51 @@ enum JSONParserState {
 
 	/// JSON value is finished, no further input acceptable
 	End(Value),
+}
+
+const TOKEN_ALLOWED: f32 = 1000.0;
+
+pub trait Biaser {
+	fn bias(&self, vocabulary: &Vocabulary, eot_token: TokenId) -> Vec<(TokenId, f32)>;
+	fn advance(&mut self, vocabulary: &Vocabulary, token: TokenId);
+}
+
+impl Biaser for JSONBiaser {
+	fn bias(&self, vocabulary: &Vocabulary, eot_token: TokenId) -> Vec<(TokenId, f32)> {
+		let mut next_valid_tokens: Vec<(TokenId, f32)> = self
+			.next_valid_tokens()
+			.iter()
+			.map(|t| (t.token_id(vocabulary).unwrap_or_else(|| panic!("token id for {t}")), TOKEN_ALLOWED))
+			.collect();
+		if self.can_end() {
+			next_valid_tokens.push((eot_token, TOKEN_ALLOWED));
+		}
+		next_valid_tokens
+	}
+
+	fn advance(&mut self, vocabulary: &Vocabulary, token: TokenId) {
+		let out_json_token = JSONToken::from_token(vocabulary, token).expect("valid token");
+		self.advance(out_json_token).unwrap();
+		tracing::debug!(
+			"Token: {:?}, next valid tokens: {:?}",
+			out_json_token,
+			self.next_valid_tokens()
+				.iter()
+				.map(|x| x.to_string().to_string())
+				.collect::<Vec<String>>()
+				.join(" "),
+		);
+	}
+}
+
+pub struct NullBiaser {}
+
+impl Biaser for NullBiaser {
+	fn bias(&self, _vocabulary: &Vocabulary, _eot_token: TokenId) -> Vec<(TokenId, f32)> {
+		vec![]
+	}
+
+	fn advance(&mut self, _vocabulary: &Vocabulary, _token: TokenId) {}
 }
 
 #[derive(Debug, Clone)]
@@ -337,7 +382,8 @@ impl JSONBiaser {
 						}
 
 						// Can't just add numbers if that would make us go over max
-						if !has_decimal && v * 10.0 > max {
+						// TODO: fix this logic
+						if !has_decimal && v * 10.0 >= max {
 							return if max_decimals > 0 { vec![JSONToken::Decimal] } else { vec![] };
 						}
 
@@ -350,7 +396,8 @@ impl JSONBiaser {
 						}
 
 						// Can't just add numbers if that would make us go over max
-						if !has_decimal && v * 10.0 < min {
+						// TODO: fix this logic
+						if !has_decimal && v * 10.0 <= min {
 							return if max_decimals > 0 { vec![JSONToken::Decimal] } else { vec![] };
 						}
 
@@ -387,10 +434,13 @@ impl JSONBiaser {
 				JSONSchema::Object => {
 					vec![JSONToken::CurlyOpen]
 				}
-				JSONSchema::Number { .. } => {
+				JSONSchema::Number { max, min, max_decimals: _ } => {
 					// First digit cannot be zero
 					let mut d: Vec<JSONToken> = (1..=9).map(JSONToken::Number).collect();
-					d.push(JSONToken::Minus);
+
+					if min.unwrap_or(-1.0) < 0.0 || max.unwrap_or(-1.0) < 0.0 {
+						d.push(JSONToken::Minus);
+					}
 					d
 				}
 				JSONSchema::Array { .. } => {

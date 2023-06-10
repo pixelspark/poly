@@ -1,12 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
 use llm::{
-	InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, InferenceSessionConfig, InferenceStats, ModelParameters,
-	OutputRequest, Prompt,
+	samplers, InferenceFeedback, InferenceParameters, InferenceResponse, InferenceSessionConfig, ModelParameters, OutputRequest, Prompt, TokenBias,
+	TokenUtf8Buffer,
 };
 
 use crate::{
 	api::{EmbeddingResponse, GenerateError, PromptRequest, SessionRequest},
+	bias::{Biaser, JSONBiaser, NullBiaser},
 	config::{Config, TaskConfig, DEFAULT_THREADS_PER_SESSION},
 };
 
@@ -30,7 +31,7 @@ impl BackendSession {
 		&mut self,
 		request: &PromptRequest,
 		mut callback: impl FnMut(InferenceResponse) -> Result<InferenceFeedback, GenerateError>,
-	) -> Result<InferenceStats, GenerateError> {
+	) -> Result<(), GenerateError> {
 		// Generate tokens (prefix + prompt + postfix)
 		tracing::debug!("beginning-of-text token is {:?}", self.model.bot_token_id());
 		let beginning_of_sentence = self.model.bot_token_id().is_some() && self.session.n_past == 0;
@@ -70,30 +71,82 @@ impl BackendSession {
 
 		tracing::trace!("tokens: {tokens:?}");
 
-		let stats = self.session.infer(
-			self.model.as_ref().as_ref(),
-			&mut rand::thread_rng(),
-			&InferenceRequest {
-				prompt: llm::Prompt::Tokens(&tokens),
-				parameters: &self.inference_parameters,
-				play_back_previous_tokens: false,
-				maximum_token_count: self.max_tokens,
-			},
-			&mut Default::default(),
-			|r| -> Result<InferenceFeedback, GenerateError> {
-				match r {
-					// Swallow private tokens in output
-					InferenceResponse::InferredToken(t) if private_tokens.contains(&t) => Ok(InferenceFeedback::Continue),
-					_ => callback(r),
+		// Feed initial prompt
+		self.session
+			.feed_prompt(
+				self.model.as_ref().as_ref(),
+				&InferenceParameters::default(),
+				Prompt::Tokens(&tokens),
+				&mut OutputRequest::default(),
+				|_| -> Result<InferenceFeedback, GenerateError> { Ok(InferenceFeedback::Continue) },
+			)
+			.unwrap();
+
+		// Set up biaser
+		let mut biaser: Box<dyn Biaser> = if let Some(ref schema) = self.task_config.schema {
+			// TODO: reference to schema, no clone
+			Box::new(JSONBiaser::new(schema.clone()))
+		} else {
+			Box::new(NullBiaser {})
+		};
+
+		// Inference loop
+		let mut result_buffer = TokenUtf8Buffer::new();
+		let vocabulary = self.model.vocabulary();
+		let eot_token = self.model.eot_token_id();
+		let mut rng = rand::thread_rng();
+		let mut inference_params = self.inference_parameters.clone();
+		let mut tokens_generated: usize = 0;
+
+		loop {
+			let sampler = samplers::TopPTopK {
+				bias_tokens: TokenBias::new(biaser.bias(vocabulary, eot_token)),
+				temperature: self.task_config.temperature,
+				top_k: self.task_config.top_k,
+				top_p: self.task_config.top_p,
+				repeat_penalty: self.task_config.repeat_penalty,
+				repetition_penalty_last_n: self.task_config.repetition_penalty_last_n,
+			};
+			tracing::info!("sampler={sampler:?}");
+
+			inference_params.sampler = Arc::new(sampler);
+
+			if let Ok(out) = self
+				.session
+				.infer_next_token(self.model.as_ref().as_ref(), &inference_params, &mut OutputRequest::default(), &mut rng)
+			{
+				tokens_generated += 1;
+				let out_token = vocabulary.id(&out).unwrap();
+				if out_token == eot_token {
+					break;
 				}
-			},
-		)?;
-		info!(
-			"Completion request completed: {} tok/s, {:?}",
-			(stats.predict_tokens as f64) / stats.predict_duration.as_secs_f64(),
-			stats
-		);
-		Ok(stats)
+
+				// Advance biaser
+				biaser.advance(vocabulary, out_token);
+
+				// Add token to result
+				if let Some(output) = result_buffer.push(&out) {
+					if !private_tokens.contains(&output) {
+						// Swallow private tokens
+						match callback(InferenceResponse::InferredToken(output))? {
+							InferenceFeedback::Continue => {}
+							InferenceFeedback::Halt => break,
+						}
+					}
+				}
+
+				// Stop once we have enough tokens
+				if let Some(max_tokens) = self.max_tokens {
+					if tokens_generated >= max_tokens {
+						break;
+					}
+				}
+			} else {
+				// End of text
+				break;
+			}
+		}
+		Ok(())
 	}
 }
 
