@@ -1,8 +1,12 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+	collections::HashMap,
+	sync::Arc,
+	time::{Duration, Instant},
+};
 
 use llm::{
-	samplers, InferenceFeedback, InferenceParameters, InferenceResponse, InferenceSessionConfig, ModelParameters, OutputRequest, Prompt, TokenBias,
-	TokenUtf8Buffer,
+	samplers, InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, InferenceSessionConfig, InferenceStats, ModelParameters,
+	OutputRequest, Prompt, TokenBias, TokenUtf8Buffer,
 };
 
 use crate::{
@@ -26,12 +30,43 @@ pub struct BackendSession {
 	task_config: TaskConfig,
 }
 
+pub trait InferenceStatsAdd {
+	fn add(&mut self, stats: &InferenceStats);
+}
+
+impl InferenceStatsAdd for InferenceStats {
+	fn add(&mut self, stats: &InferenceStats) {
+		self.predict_duration += stats.predict_duration;
+		self.predict_tokens += stats.predict_tokens;
+		self.prompt_tokens += stats.prompt_tokens;
+		self.feed_prompt_duration += stats.feed_prompt_duration;
+	}
+}
+
 impl BackendSession {
 	pub fn complete(
 		&mut self,
 		request: &PromptRequest,
+		callback: impl FnMut(InferenceResponse) -> Result<InferenceFeedback, GenerateError>,
+	) -> Result<InferenceStats, GenerateError> {
+		let res = self.complete_actual(request, callback)?;
+		let prompt_tokens_per_s = (res.prompt_tokens as f64) / res.feed_prompt_duration.as_secs_f64();
+		let predict_tokens_per_s = (res.predict_tokens as f64) / res.predict_duration.as_secs_f64();
+
+		tracing::info!(
+			"completion finished; {prompt_tokens_per_s} t/s prompt, {predict_tokens_per_s} t/s predict; stats: {:?}",
+			res
+		);
+		Ok(res)
+	}
+
+	fn complete_actual(
+		&mut self,
+		request: &PromptRequest,
 		mut callback: impl FnMut(InferenceResponse) -> Result<InferenceFeedback, GenerateError>,
-	) -> Result<(), GenerateError> {
+	) -> Result<InferenceStats, GenerateError> {
+		let mut completion_stats = InferenceStats::default();
+
 		// Generate tokens (prefix + prompt + postfix)
 		tracing::debug!("beginning-of-text token is {:?}", self.model.bot_token_id());
 		let beginning_of_sentence = self.model.bot_token_id().is_some() && self.session.n_past == 0;
@@ -72,15 +107,66 @@ impl BackendSession {
 		tracing::trace!("tokens: {tokens:?}");
 
 		// Feed initial prompt
-		self.session
-			.feed_prompt(
+		let start = Instant::now();
+		self.session.feed_prompt(
+			self.model.as_ref().as_ref(),
+			&InferenceParameters::default(),
+			Prompt::Tokens(&tokens),
+			&mut OutputRequest::default(),
+			|_| -> Result<InferenceFeedback, GenerateError> { Ok(InferenceFeedback::Continue) },
+		)?;
+		completion_stats.add(&InferenceStats {
+			feed_prompt_duration: Instant::now().duration_since(start),
+			prompt_tokens: tokens.len(),
+			predict_duration: Duration::ZERO,
+			predict_tokens: 0,
+		});
+
+		// If a bias prompt is configured, let the model freely generate tokens, then feed the bias prompt and start
+		// biased prompt generation. The tokens generated before the bias prompt is fed are not returned.
+		let mut rng = rand::thread_rng();
+		if let Some(ref bias_prompt) = self.task_config.bias_prompt {
+			let stats = self.session.infer(
+				self.model.as_ref().as_ref(),
+				&mut rng,
+				&InferenceRequest {
+					prompt: Prompt::Tokens(&[]),
+					parameters: &self.inference_parameters,
+					maximum_token_count: self.max_tokens,
+					play_back_previous_tokens: false,
+				},
+				&mut OutputRequest::default(),
+				|r| -> Result<InferenceFeedback, GenerateError> {
+					match r {
+						InferenceResponse::SnapshotToken(_) => Ok(InferenceFeedback::Continue),
+						InferenceResponse::PromptToken(_) => Ok(InferenceFeedback::Continue),
+						InferenceResponse::InferredToken(t) => {
+							tracing::trace!("Unbiased output token: {t}");
+							Ok(InferenceFeedback::Continue)
+						}
+						InferenceResponse::EotToken => Ok(InferenceFeedback::Halt),
+					}
+				},
+			)?;
+			completion_stats.add(&stats);
+
+			// Feed the bias prompt
+			tracing::info!("feeding bias prompt: {bias_prompt}");
+			let start = Instant::now();
+			self.session.feed_prompt(
 				self.model.as_ref().as_ref(),
 				&InferenceParameters::default(),
-				Prompt::Tokens(&tokens),
+				Prompt::Text(bias_prompt.as_str()),
 				&mut OutputRequest::default(),
 				|_| -> Result<InferenceFeedback, GenerateError> { Ok(InferenceFeedback::Continue) },
-			)
-			.unwrap();
+			)?;
+			completion_stats.add(&InferenceStats {
+				feed_prompt_duration: Instant::now().duration_since(start),
+				prompt_tokens: tokens.len(),
+				predict_duration: Duration::ZERO,
+				predict_tokens: 0,
+			});
+		}
 
 		// Set up biaser
 		let mut biaser: Box<dyn Biaser> = if let Some(ref schema) = self.task_config.schema {
@@ -94,7 +180,6 @@ impl BackendSession {
 		let mut result_buffer = TokenUtf8Buffer::new();
 		let vocabulary = self.model.vocabulary();
 		let eot_token = self.model.eot_token_id();
-		let mut rng = rand::thread_rng();
 		let mut inference_params = self.inference_parameters.clone();
 		let mut tokens_generated: usize = 0;
 
@@ -145,7 +230,7 @@ impl BackendSession {
 				break;
 			}
 		}
-		Ok(())
+		Ok(completion_stats)
 	}
 }
 

@@ -104,8 +104,16 @@ pub trait Biaser {
 
 impl Biaser for JSONBiaser {
 	fn bias(&self, vocabulary: &Vocabulary, eot_token: TokenId) -> Vec<(TokenId, f32)> {
-		let mut next_valid_tokens: Vec<(TokenId, f32)> = self
-			.next_valid_tokens()
+		let next_valid_json_tokens = self.next_valid_tokens();
+		tracing::trace!(
+			"next valid tokens: {}",
+			next_valid_json_tokens
+				.iter()
+				.map(|x| x.to_string().to_string())
+				.collect::<Vec<String>>()
+				.join(" ")
+		);
+		let mut next_valid_tokens: Vec<(TokenId, f32)> = next_valid_json_tokens
 			.iter()
 			.map(|t| (t.token_id(vocabulary).unwrap_or_else(|| panic!("token id for {t}")), TOKEN_ALLOWED))
 			.collect();

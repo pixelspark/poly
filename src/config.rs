@@ -58,18 +58,29 @@ pub struct TaskConfig {
 	/// Schema the response should adhere to (makes output be JSON)
 	pub schema: Option<JSONSchema>,
 
+	/// When configured, first (up to max_tokens) tokens are inferred without bias, then this prompt is fed, after which
+	/// a biased response is generated.
+	pub bias_prompt: Option<String>,
+
+	/// The top K words by score are kept during sampling.
 	#[serde(default = "default_top_k")]
 	pub top_k: usize,
 
+	/// The cumulative probability after which no more words are kept for sampling.
 	#[serde(default = "default_top_p")]
 	pub top_p: f32,
 
+	/// The penalty for repeating tokens. Higher values make the generation less
+	/// likely to get into a loop, but may harm results when repetitive outputs
+	/// are desired.
 	#[serde(default = "default_repeat_penalty")]
 	pub repeat_penalty: f32,
 
+	/// Temperature (randomness) used for sampling. A higher number is more random.
 	#[serde(default = "default_temperature")]
 	pub temperature: f32,
 
+	/// The number of tokens to consider for the repetition penalty.
 	#[serde(default = "default_repetition_penalty_last_n")]
 	pub repetition_penalty_last_n: usize,
 }
