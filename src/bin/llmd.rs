@@ -1,57 +1,30 @@
-mod api;
-mod backend;
-mod config;
-
-use crate::backend::Backend;
-use api::EmbeddingResponse;
-use api::GenerateError;
-use api::GenerateResponse;
-use api::KeyQuery;
-use api::ModelsResponse;
-use api::PromptRequest;
-use api::SessionAndPromptRequest;
-use api::SessionRequest;
-use api::Status;
-use api::StatusResponse;
-use api::TasksResponse;
 use async_stream::stream;
-use axum::extract::ws::Message;
-use axum::extract::ws::WebSocket;
-use axum::extract::ws::WebSocketUpgrade;
-use axum::extract::Path;
-use axum::extract::Query;
-use axum::extract::State;
-use axum::http;
-use axum::http::header::CONTENT_TYPE;
-use axum::http::HeaderValue;
-use axum::http::Method;
-use axum::http::Request;
-use axum::http::StatusCode;
+use axum::extract::{ws::Message, ws::WebSocket, ws::WebSocketUpgrade, Path, Query, State};
+use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
+use axum::http::{HeaderValue, Method, Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::sse::Event;
-use axum::response::IntoResponse;
-use axum::response::Sse;
-use axum::routing::get;
-use axum::routing::post;
-use axum::Extension;
-use axum::Json;
-use axum::Router;
+use axum::response::{IntoResponse, Sse};
+use axum::routing::{get, post};
+use axum::{Extension, Json, Router};
 use clap::Parser;
-use config::Args;
-use config::Config;
 use futures_util::Stream;
 use llm::InferenceResponse;
+use llmd::api::{
+	EmbeddingResponse, GenerateError, GenerateResponse, KeyQuery, ModelsResponse, PromptRequest, SessionAndPromptRequest, SessionRequest, Status,
+	StatusResponse, TasksResponse,
+};
+use llmd::backend::Backend;
+use llmd::config::{Args, Config};
 use std::convert::Infallible;
 use std::net::SocketAddr;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use std::{fs::File, io::Read};
 use tower::limit::ConcurrencyLimitLayer;
-use tower_http::cors::Any;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, info, trace};
@@ -388,7 +361,7 @@ async fn authorize<T>(
 	if !state.config.allowed_keys.is_empty() {
 		let auth_header = req
 			.headers()
-			.get(http::header::AUTHORIZATION)
+			.get(AUTHORIZATION)
 			.and_then(|header| header.to_str().ok())
 			.map(|s| s.to_string());
 
