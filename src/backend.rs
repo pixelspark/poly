@@ -44,6 +44,7 @@ impl InferenceStatsAdd for InferenceStats {
 }
 
 impl BackendSession {
+	/// Perform a completion task following the task's configuration.
 	pub fn complete(
 		&mut self,
 		request: &PromptRequest,
@@ -54,7 +55,7 @@ impl BackendSession {
 		let predict_tokens_per_s = (res.predict_tokens as f64) / res.predict_duration.as_secs_f64();
 
 		tracing::info!(
-			"completion finished; {prompt_tokens_per_s} t/s prompt, {predict_tokens_per_s} t/s predict; stats: {:?}",
+			"completion finished; {prompt_tokens_per_s:.3} t/s prompt, {predict_tokens_per_s:.3} t/s predict; stats: {:?}",
 			res
 		);
 		Ok(res)
@@ -68,8 +69,11 @@ impl BackendSession {
 		let mut completion_stats = InferenceStats::default();
 
 		// Generate tokens (prefix + prompt + postfix)
-		tracing::debug!("beginning-of-text token is {:?}", self.model.bot_token_id());
 		let beginning_of_sentence = self.model.bot_token_id().is_some() && self.session.n_past == 0;
+		tracing::debug!(
+			"beginning-of-text token is {:?}, beginning_of_sentence={beginning_of_sentence:?}",
+			self.model.bot_token_id()
+		);
 		let mut tokens = vec![];
 
 		// Append prefix tokens
@@ -191,55 +195,69 @@ impl BackendSession {
 		let mut tokens_generated: usize = 0;
 
 		loop {
-			let sampler = samplers::TopPTopK {
-				bias_tokens: TokenBias::new(biaser.bias(vocabulary, eot_token)),
-				temperature: self.task_config.temperature,
-				top_k: self.task_config.top_k,
-				top_p: self.task_config.top_p,
-				repeat_penalty: self.task_config.repeat_penalty,
-				repetition_penalty_last_n: self.task_config.repetition_penalty_last_n,
+			let biaser_bias = biaser.bias(vocabulary, eot_token);
+
+			// If there is only one token positively biased, that will be the next token
+			let out_token_id = if biaser_bias.len() == 1 && biaser_bias[0].1 > 0.0 {
+				tracing::debug!("only one token in bias, that will be our next: {:?}", biaser_bias[0]);
+				biaser_bias[0].0
+			} else {
+				// Sample a token using the model
+				let sampler = samplers::TopPTopK {
+					bias_tokens: TokenBias::new(biaser_bias),
+					temperature: self.task_config.temperature,
+					top_k: self.task_config.top_k,
+					top_p: self.task_config.top_p,
+					repeat_penalty: self.task_config.repeat_penalty,
+					repetition_penalty_last_n: self.task_config.repetition_penalty_last_n,
+				};
+
+				inference_params.sampler = Arc::new(sampler);
+
+				let start = Instant::now();
+				let Ok(out) = self
+					.session
+					.infer_next_token(self.model.as_ref().as_ref(), &inference_params, &mut OutputRequest::default(), &mut rng) else {
+						break;
+					};
+				completion_stats.add(&InferenceStats {
+					feed_prompt_duration: Duration::ZERO,
+					prompt_tokens: 0,
+					predict_duration: Instant::now().duration_since(start),
+					predict_tokens: 1,
+				});
+				vocabulary.id(&out).unwrap()
 			};
 
-			inference_params.sampler = Arc::new(sampler);
+			tokens_generated += 1;
 
-			if let Ok(out) = self
-				.session
-				.infer_next_token(self.model.as_ref().as_ref(), &inference_params, &mut OutputRequest::default(), &mut rng)
-			{
-				tokens_generated += 1;
-				let out_token = vocabulary.id(&out).unwrap();
+			// Save to transcript
+			if tracing::enabled!(tracing::Level::DEBUG) {
+				tokens.push(out_token_id);
+			}
+			if out_token_id == eot_token {
+				break;
+			}
 
-				// Save to transcript
-				if tracing::enabled!(tracing::Level::DEBUG) {
-					tokens.push(out_token);
+			// Advance biaser
+			biaser.advance(vocabulary, out_token_id);
+
+			// Add token to result
+			if let Some(output) = result_buffer.push(&vocabulary.token(out_token_id as usize)) {
+				if !private_tokens.contains(&output) {
+					// Swallow private tokens
+					match callback(InferenceResponse::InferredToken(output))? {
+						InferenceFeedback::Continue => {}
+						InferenceFeedback::Halt => break,
+					}
 				}
-				if out_token == eot_token {
+			}
+
+			// Stop once we have enough tokens
+			if let Some(max_tokens) = self.max_tokens {
+				if tokens_generated >= max_tokens {
 					break;
 				}
-
-				// Advance biaser
-				biaser.advance(vocabulary, out_token);
-
-				// Add token to result
-				if let Some(output) = result_buffer.push(&out) {
-					if !private_tokens.contains(&output) {
-						// Swallow private tokens
-						match callback(InferenceResponse::InferredToken(output))? {
-							InferenceFeedback::Continue => {}
-							InferenceFeedback::Halt => break,
-						}
-					}
-				}
-
-				// Stop once we have enough tokens
-				if let Some(max_tokens) = self.max_tokens {
-					if tokens_generated >= max_tokens {
-						break;
-					}
-				}
-			} else {
-				// End of text
-				break;
 			}
 		}
 
