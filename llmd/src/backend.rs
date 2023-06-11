@@ -199,7 +199,16 @@ impl BackendSession {
 			// If there is only one token positively biased, that will be the next token
 			let out_token_id = if biaser_bias.len() == 1 && biaser_bias[0].1 > 0.0 {
 				tracing::debug!("only one token in bias, that will be our next: {:?}", biaser_bias[0]);
-				biaser_bias[0].0
+				// Still need to feed it to our model!
+				let only_possible_token = biaser_bias[0].0;
+				self.session.feed_prompt(
+					self.model.as_ref().as_ref(),
+					&inference_params,
+					Prompt::Tokens(&[only_possible_token as TokenId]),
+					&mut OutputRequest::default(),
+					|_| -> Result<InferenceFeedback, GenerateError> { Ok(InferenceFeedback::Continue) },
+				)?;
+				only_possible_token
 			} else {
 				// Sample a token using the model
 				let sampler = samplers::TopPTopK {
