@@ -205,7 +205,6 @@ impl BackendSession {
 					&mut OutputRequest::default(),
 					|_| -> Result<InferenceFeedback, GenerateError> { Ok(InferenceFeedback::Continue) },
 				)?;
-				tokens.push(only_possible_token);
 				completion_stats.add(&InferenceStats {
 					feed_prompt_duration: Instant::now().duration_since(start),
 					prompt_tokens: 1,
