@@ -9,6 +9,8 @@ use serde_json::Value;
 use serde_json::{json, Map};
 use thiserror::Error;
 
+use crate::{Biaser, TOKEN_ALLOWED};
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum JsonSchema {
@@ -137,18 +139,6 @@ enum JsonParserState<'schema> {
 	InString(String),
 }
 
-pub const TOKEN_ALLOWED: f32 = 10000.0;
-pub const TOKEN_FORBIDDEN: f32 = -10000.0;
-
-pub trait Biaser {
-	/// Return the current set of token biases
-	fn bias(&self, vocabulary: &Vocabulary, eot_token: TokenId) -> Vec<(TokenId, f32)>;
-
-	/// Advance the biaser by feeding it a single next token (must be one of the tokens allowed as described by the
-	/// result of a call to `bias`)
-	fn advance(&mut self, vocabulary: &Vocabulary, token: TokenId);
-}
-
 impl<'schema> Biaser for JsonBiaser<'schema> {
 	fn bias(&self, vocabulary: &Vocabulary, eot_token: TokenId) -> Vec<(TokenId, f32)> {
 		let next_valid_json_tokens = self.next_valid_tokens();
@@ -245,16 +235,6 @@ impl<'schema> Biaser for JsonBiaser<'schema> {
 		self.advance(&out_json_token).unwrap();
 		tracing::debug!("Token: {:?}, next valid tokens: {:?}", &out_json_token, self.next_valid_tokens());
 	}
-}
-
-pub struct NullBiaser {}
-
-impl Biaser for NullBiaser {
-	fn bias(&self, _vocabulary: &Vocabulary, _eot_token: TokenId) -> Vec<(TokenId, f32)> {
-		vec![]
-	}
-
-	fn advance(&mut self, _vocabulary: &Vocabulary, _token: TokenId) {}
 }
 
 #[derive(Debug, Clone)]

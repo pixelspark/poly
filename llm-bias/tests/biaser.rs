@@ -7,9 +7,10 @@ use llm::{
 	TokenBias, TokenUtf8Buffer,
 };
 
-use llmd::bias::{Biaser, BiaserError, JsonToken};
-
-use llmd::bias::{JsonBiaser, JsonSchema};
+use llm_bias::{
+	json::{BiaserError, JsonBiaser, JsonSchema, JsonToken},
+	Biaser,
+};
 use rand::SeedableRng;
 use serde_json::Value;
 use tracing_test::traced_test;
@@ -104,9 +105,9 @@ pub fn test_object_parser() {
 	biaser.advance(&JsonToken::DoubleQuote).unwrap();
 
 	// First we expect the 'first_name' key
-	assert_eq!(biaser.next_valid_tokens(), vec![JsonToken::String("first_name".to_string())]);
+	assert_eq!(biaser.next_valid_tokens(), vec![JsonToken::AnyOf(vec!["first_name".to_string()])]);
 	biaser.advance(&JsonToken::String("first_".to_string())).unwrap();
-	assert_eq!(biaser.next_valid_tokens(), vec![JsonToken::String("name".to_string())]);
+	assert_eq!(biaser.next_valid_tokens(), vec![JsonToken::AnyOf(vec!["name".to_string()])]);
 	biaser.advance(&JsonToken::String("name".to_string())).unwrap();
 	assert_eq!(biaser.next_valid_tokens(), vec![JsonToken::DoubleQuote]);
 	biaser.advance(&JsonToken::DoubleQuote).unwrap();
@@ -121,7 +122,7 @@ pub fn test_object_parser() {
 
 	assert_eq!(biaser.next_valid_tokens(), vec![JsonToken::DoubleQuote]);
 	biaser.advance(&JsonToken::DoubleQuote).unwrap();
-	assert_eq!(biaser.next_valid_tokens(), vec![JsonToken::String("last_name".to_string())]);
+	assert_eq!(biaser.next_valid_tokens(), vec![JsonToken::AnyOf(vec!["last_name".to_string()])]);
 	biaser.advance(&JsonToken::String("last_name".to_string())).unwrap();
 	assert_eq!(biaser.next_valid_tokens(), vec![JsonToken::DoubleQuote]);
 	biaser.advance(&JsonToken::DoubleQuote).unwrap(); // {"first_name":"tommy","last_name" at this point
@@ -134,8 +135,6 @@ pub fn test_object_parser() {
 	biaser.advance(&JsonToken::CurlyClose).unwrap();
 	assert_eq!(biaser.next_valid_tokens(), vec![]); // Object is done
 	assert!(biaser.can_end());
-
-	println!("{:?}", biaser.next_valid_tokens());
 }
 
 #[traced_test]
@@ -170,12 +169,14 @@ pub fn test_array_parser() {
 	assert!(bias.can_end());
 }
 
+static MODEL_PATH: &str = "../data/pythia-160m-q4_0.bin";
+
 #[traced_test]
 #[test]
 pub fn test_json_biaser_objects() {
 	let model = llm::load_dynamic(
 		ModelArchitecture::GptNeoX,
-		Path::new("data/pythia-160m-q4_0.bin"),
+		Path::new(MODEL_PATH),
 		llm::VocabularySource::Model,
 		ModelParameters::default(),
 		|_progress| {},
@@ -220,7 +221,7 @@ pub fn test_json_biaser_objects() {
 pub fn test_json_biaser() {
 	let model = llm::load_dynamic(
 		ModelArchitecture::GptNeoX,
-		Path::new("data/pythia-160m-q4_0.bin"),
+		Path::new(MODEL_PATH),
 		llm::VocabularySource::Model,
 		ModelParameters::default(),
 		|_progress| {},

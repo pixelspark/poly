@@ -1,9 +1,8 @@
 use clap::Parser;
 use llm::ModelArchitecture;
+use llm_bias::json::JsonSchema;
 use serde::{Deserialize, Deserializer};
 use std::{collections::HashMap, path::PathBuf};
-
-use crate::bias::JsonSchema;
 
 fn architecture_from_str<'de, D>(deserializer: D) -> Result<ModelArchitecture, D::Error>
 where

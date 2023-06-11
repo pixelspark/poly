@@ -6,12 +6,12 @@ use std::{
 
 use llm::{
 	samplers, InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, InferenceSessionConfig, InferenceStats, ModelParameters,
-	OutputRequest, Prompt, TokenBias, TokenUtf8Buffer,
+	OutputRequest, Prompt, TokenBias, TokenId, TokenUtf8Buffer,
 };
+use llm_bias::{json::JsonBiaser, Biaser, NullBiaser};
 
 use crate::{
 	api::{EmbeddingResponse, GenerateError, PromptRequest, SessionRequest},
-	bias::{Biaser, JsonBiaser, NullBiaser},
 	config::{BiaserConfig, Config, TaskConfig, DEFAULT_THREADS_PER_SESSION},
 };
 
