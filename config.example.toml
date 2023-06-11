@@ -51,5 +51,5 @@ private_tokens = ["<|im_start|>", "<|im_end|>"]
 # { type = "null" }
 # { type = "object" } (currently produces an empty object always)
 # { type = "string", max_length? = 12, enum? = ["foo", "bar", "baz"] }
-schema = { type = "boolean" }
+biaser = { json = { type = "boolean" } }
 temperature = 1

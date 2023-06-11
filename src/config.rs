@@ -3,7 +3,7 @@ use llm::ModelArchitecture;
 use serde::{Deserialize, Deserializer};
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::bias::JSONSchema;
+use crate::bias::JsonSchema;
 
 fn architecture_from_str<'de, D>(deserializer: D) -> Result<ModelArchitecture, D::Error>
 where
@@ -40,6 +40,12 @@ pub struct ModelConfig {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum BiaserConfig {
+	Json(JsonSchema),
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct TaskConfig {
 	pub model: String,
 
@@ -55,8 +61,8 @@ pub struct TaskConfig {
 	/// Tokens that users should not be able to input as they are used for signalling
 	pub private_tokens: Option<Vec<String>>,
 
-	/// Schema the response should adhere to (makes output be JSON)
-	pub schema: Option<JSONSchema>,
+	/// Biaser: the biaser to apply to the output (if any)
+	pub biaser: Option<BiaserConfig>,
 
 	/// When configured, first (up to max_tokens) tokens are inferred without bias, then this prompt is fed, after which
 	/// a biased response is generated.

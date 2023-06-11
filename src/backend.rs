@@ -11,8 +11,8 @@ use llm::{
 
 use crate::{
 	api::{EmbeddingResponse, GenerateError, PromptRequest, SessionRequest},
-	bias::{Biaser, JSONBiaser, NullBiaser},
-	config::{Config, TaskConfig, DEFAULT_THREADS_PER_SESSION},
+	bias::{Biaser, JsonBiaser, NullBiaser},
+	config::{BiaserConfig, Config, TaskConfig, DEFAULT_THREADS_PER_SESSION},
 };
 
 use tracing::log::*;
@@ -178,10 +178,9 @@ impl BackendSession {
 		}
 
 		// Set up biaser
-		let mut biaser: Box<dyn Biaser> = if let Some(ref schema) = self.task_config.schema {
-			Box::new(JSONBiaser::new(schema))
-		} else {
-			Box::new(NullBiaser {})
+		let mut biaser: Box<dyn Biaser> = match self.task_config.biaser {
+			Some(BiaserConfig::Json(ref schema)) => Box::new(JsonBiaser::new(schema)),
+			None => Box::new(NullBiaser {}),
 		};
 
 		// Inference loop
