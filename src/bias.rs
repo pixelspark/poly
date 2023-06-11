@@ -102,8 +102,8 @@ enum JSONParserState<'schema> {
 	InString(String),
 }
 
-const TOKEN_ALLOWED: f32 = 10000.0;
-const TOKEN_FORBIDDEN: f32 = -10000.0;
+pub const TOKEN_ALLOWED: f32 = 10000.0;
+pub const TOKEN_FORBIDDEN: f32 = -10000.0;
 
 pub trait Biaser {
 	/// Return the current set of token biases
