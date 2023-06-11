@@ -104,7 +104,7 @@ impl BackendSession {
 			tokens.append(&mut Prompt::Text(postfix).to_tokens(self.model.vocabulary(), beginning_of_sentence && tokens.is_empty())?);
 		}
 
-		tracing::trace!("tokens: {tokens:?}");
+		tracing::trace!("prompt tokens: {tokens:?}");
 
 		// Feed initial prompt
 		let start = Instant::now();
@@ -141,6 +141,10 @@ impl BackendSession {
 						InferenceResponse::SnapshotToken(_) => Ok(InferenceFeedback::Continue),
 						InferenceResponse::PromptToken(_) => Ok(InferenceFeedback::Continue),
 						InferenceResponse::InferredToken(t) => {
+							// Save to transcript
+							if tracing::enabled!(tracing::Level::DEBUG) {
+								tokens.push(self.model.vocabulary().tokenize(&t, false).unwrap()[0].1);
+							}
 							tracing::trace!("Unbiased output token: {t}");
 							Ok(InferenceFeedback::Continue)
 						}
@@ -152,6 +156,9 @@ impl BackendSession {
 
 			// Feed the bias prompt
 			tracing::info!("feeding bias prompt: {bias_prompt}");
+			if tracing::enabled!(tracing::Level::DEBUG) {
+				tokens.extend(self.model.vocabulary().tokenize(bias_prompt, false).unwrap().iter().map(|x| x.1));
+			}
 			let start = Instant::now();
 			self.session.feed_prompt(
 				self.model.as_ref().as_ref(),
@@ -201,6 +208,11 @@ impl BackendSession {
 			{
 				tokens_generated += 1;
 				let out_token = vocabulary.id(&out).unwrap();
+
+				// Save to transcript
+				if tracing::enabled!(tracing::Level::DEBUG) {
+					tokens.push(out_token);
+				}
 				if out_token == eot_token {
 					break;
 				}
@@ -230,6 +242,12 @@ impl BackendSession {
 				break;
 			}
 		}
+
+		if tracing::enabled!(tracing::Level::DEBUG) {
+			let decoded = self.model.vocabulary().decode(tokens, false);
+			let txt = String::from_utf8_lossy(&decoded);
+			tracing::info!("full transcript (excluding prelude): {txt}");
+		}
 		Ok(completion_stats)
 	}
 }
@@ -256,7 +274,7 @@ impl Backend {
 					llm::VocabularySource::Model,
 					params,
 					|progress| {
-						debug!("Loading endpoint {endpoint_name}: {progress:#?}");
+						trace!("Loading endpoint {endpoint_name}: {progress:#?}");
 					},
 				)
 				.expect("load model"),

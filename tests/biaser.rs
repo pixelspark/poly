@@ -3,10 +3,10 @@ use std::{path::Path, sync::Arc};
 
 use llm::{
 	samplers, InferenceFeedback, InferenceParameters, InferenceSessionConfig, Model, ModelArchitecture, ModelParameters, OutputRequest, Prompt,
-	TokenBias, TokenId, TokenUtf8Buffer,
+	TokenBias, TokenUtf8Buffer,
 };
 
-use llmd::bias::{BiaserError, JSONToken};
+use llmd::bias::{Biaser, BiaserError, JSONToken};
 
 use llmd::bias::{JSONBiaser, JSONSchema};
 use rand::SeedableRng;
@@ -20,6 +20,17 @@ pub fn test_parser() {
 }
 
 #[test]
+pub fn test_string_parser() {
+	let schema = JSONSchema::String {};
+	let mut bias = JSONBiaser::new(&schema);
+	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::DoubleQuote]);
+	bias.advance(&JSONToken::DoubleQuote).unwrap();
+	bias.advance(&JSONToken::String(String::from("hello"))).unwrap();
+	bias.advance(&JSONToken::DoubleQuote).unwrap();
+	assert_eq!(bias.next_valid_tokens(), vec![]);
+}
+
+#[test]
 pub fn test_array_parser() {
 	let schema = JSONSchema::Array {
 		items: Box::new(JSONSchema::Boolean),
@@ -29,23 +40,23 @@ pub fn test_array_parser() {
 	let mut bias = JSONBiaser::new(&schema);
 
 	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::BracketOpen]);
-	bias.advance(JSONToken::BracketOpen).unwrap();
+	bias.advance(&JSONToken::BracketOpen).unwrap();
 	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::True, JSONToken::False]);
-	bias.advance(JSONToken::True).unwrap();
+	bias.advance(&JSONToken::True).unwrap();
 	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::Comma]);
-	bias.advance(JSONToken::Comma).unwrap();
+	bias.advance(&JSONToken::Comma).unwrap();
 	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::True, JSONToken::False]);
-	bias.advance(JSONToken::False).unwrap();
+	bias.advance(&JSONToken::False).unwrap();
 	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::Comma, JSONToken::BracketClose]);
-	bias.advance(JSONToken::Comma).unwrap();
+	bias.advance(&JSONToken::Comma).unwrap();
 	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::True, JSONToken::False]);
-	bias.advance(JSONToken::False).unwrap();
+	bias.advance(&JSONToken::False).unwrap();
 	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::Comma, JSONToken::BracketClose]);
-	bias.advance(JSONToken::Comma).unwrap();
+	bias.advance(&JSONToken::Comma).unwrap();
 	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::True, JSONToken::False]);
-	bias.advance(JSONToken::False).unwrap();
+	bias.advance(&JSONToken::False).unwrap();
 	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::BracketClose]);
-	bias.advance(JSONToken::BracketClose).unwrap();
+	bias.advance(&JSONToken::BracketClose).unwrap();
 	assert_eq!(bias.next_valid_tokens(), vec![]);
 	assert!(bias.can_end());
 }
@@ -60,6 +71,9 @@ pub fn test_json_biaser() {
 		|_progress| {},
 	)
 	.unwrap();
+
+	test_json_bias(JSONSchema::String {}, model.as_ref());
+
 	test_json_bias(JSONSchema::Boolean, model.as_ref());
 
 	test_json_bias(JSONSchema::Null, model.as_ref());
@@ -126,17 +140,9 @@ fn test_json_bias(schema: JSONSchema, model: &dyn Model) {
 		let mut result_buffer = TokenUtf8Buffer::new();
 
 		loop {
-			let next_valid_tokens = bias.next_valid_tokens();
+			let next_valid_tokens = bias.bias(vocab, model.eot_token_id());
 			if next_valid_tokens.is_empty() {
 				break;
-			}
-
-			let mut next_valid_tokens: Vec<(TokenId, f32)> = next_valid_tokens
-				.iter()
-				.map(|t| (t.token_id(vocab).unwrap_or_else(|| panic!("token id for {t}")), 10000.0))
-				.collect();
-			if bias.can_end() {
-				next_valid_tokens.push((model.eot_token_id(), 10000.0));
 			}
 
 			let sampler = samplers::TopPTopK {
@@ -148,30 +154,34 @@ fn test_json_bias(schema: JSONSchema, model: &dyn Model) {
 				..InferenceParameters::default()
 			};
 
-			if let Ok(out) = session.infer_next_token(model, &inference_params, &mut OutputRequest::default(), &mut rng) {
-				let out_token = vocab.id(&out).unwrap();
-				if out_token == model.eot_token_id() {
-					println!("EOT token");
+			match session.infer_next_token(model, &inference_params, &mut OutputRequest::default(), &mut rng) {
+				Ok(out) => {
+					let out_token = vocab.id(&out).unwrap();
+					if out_token == model.eot_token_id() {
+						println!("EOT token");
+						break;
+					}
+					let out_json_token = JSONToken::from_token(vocab, out_token).expect("valid token");
+
+					bias.advance(&out_json_token).expect("advance");
+					if let Some(output) = result_buffer.push(&out) {
+						result.push_str(&output);
+					}
+					println!(
+						"Token: {}, RESULT: {result} next valid tokens: {}",
+						String::from_utf8_lossy(&vocab.decode(vec![out_token], false)),
+						bias.next_valid_tokens()
+							.iter()
+							.map(|x| x.to_string().to_string())
+							.collect::<Vec<String>>()
+							.join(" "),
+					);
+				}
+				Err(e) => {
+					// End of text
+					println!("End {e:?}");
 					break;
 				}
-				let out_json_token = JSONToken::from_token(vocab, out_token).expect("valid token");
-
-				bias.advance(out_json_token).expect("advance");
-				if let Some(output) = result_buffer.push(&out) {
-					result.push_str(&output);
-				}
-				println!(
-					"Token: {:?}, RESULT: \"{result}\" next valid tokens: {:?}",
-					String::from_utf8_lossy(&vocab.decode(vec![out_token], false)),
-					bias.next_valid_tokens()
-						.iter()
-						.map(|x| x.to_string().to_string())
-						.collect::<Vec<String>>()
-						.join(" "),
-				);
-			} else {
-				// End of text
-				break;
 			}
 		}
 		println!("Finish: {}\n", result);

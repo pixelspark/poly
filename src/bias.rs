@@ -24,6 +24,7 @@ pub enum JSONSchema {
 		min_items: Option<usize>,
 		max_items: Option<usize>,
 	},
+	String {},
 }
 
 impl JSONSchema {
@@ -59,6 +60,7 @@ impl JSONSchema {
 				}
 				true
 			}
+			(JSONSchema::String { .. }, Value::String(_s)) => true,
 			_ => false,
 		}
 	}
@@ -93,9 +95,13 @@ enum JSONParserState<'schema> {
 
 	/// JSON value is finished, no further input acceptable
 	End(Value),
+
+	/// Inside a string
+	InString(String),
 }
 
-const TOKEN_ALLOWED: f32 = 1000.0;
+const TOKEN_ALLOWED: f32 = 10000.0;
+const TOKEN_FORBIDDEN: f32 = -10000.0;
 
 pub trait Biaser {
 	fn bias(&self, vocabulary: &Vocabulary, eot_token: TokenId) -> Vec<(TokenId, f32)>;
@@ -113,6 +119,37 @@ impl<'schema> Biaser for JSONBiaser<'schema> {
 				.collect::<Vec<String>>()
 				.join(" ")
 		);
+
+		// If the set contains String(""), then basically anything is allowed (no bias). Signal this by only returning
+		// that the end token is forbidden
+		if next_valid_json_tokens.contains(&JSONToken::AnyString) {
+			let mut valid_tokens: Vec<TokenId> = (0..=(vocabulary.len() - 1) as TokenId)
+				.filter(|token_id| {
+					if *token_id == eot_token {
+						return false;
+					}
+					let bytes = vocabulary.token(*token_id as usize);
+					//println!("VOCAB TOKEN {token_id}={:?}", String::from_utf8(bytes.clone()));
+					let Ok(s) = String::from_utf8(bytes) else {
+						return false;
+					};
+
+					if s.contains('\"') || s.contains('\n') || s.contains('\t') || s.contains('\r') {
+						return false;
+					}
+					true
+				})
+				.collect();
+
+			valid_tokens.push(JSONToken::DoubleQuote.token_id(vocabulary).unwrap());
+
+			println!("total tokens: {} valid: {}", vocabulary.len(), valid_tokens.len());
+
+			return valid_tokens.iter().map(|vt| (*vt, TOKEN_ALLOWED)).collect();
+
+			//return vec![(eot_token, TOKEN_FORBIDDEN)];
+		}
+
 		let mut next_valid_tokens: Vec<(TokenId, f32)> = next_valid_json_tokens
 			.iter()
 			.map(|t| (t.token_id(vocabulary).unwrap_or_else(|| panic!("token id for {t}")), TOKEN_ALLOWED))
@@ -125,10 +162,10 @@ impl<'schema> Biaser for JSONBiaser<'schema> {
 
 	fn advance(&mut self, vocabulary: &Vocabulary, token: TokenId) {
 		let out_json_token = JSONToken::from_token(vocabulary, token).expect("valid token");
-		self.advance(out_json_token).unwrap();
+		self.advance(&out_json_token).unwrap();
 		tracing::debug!(
 			"Token: {:?}, next valid tokens: {:?}",
-			out_json_token,
+			&out_json_token,
 			self.next_valid_tokens()
 				.iter()
 				.map(|x| x.to_string().to_string())
@@ -154,18 +191,21 @@ pub struct JSONBiaser<'schema> {
 	state: JSONParserState<'schema>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JSONToken {
+	AnyString, // Any string except double quote (used in next_valid_token)
 	BracketClose,
 	BracketOpen,
 	Comma,
 	CurlyClose,
 	CurlyOpen,
 	Decimal,
+	Digit(usize),
+	DoubleQuote,
 	False,
 	Minus,
 	Null,
-	Number(usize),
+	String(String), // Anything except the double quote
 	True,
 }
 
@@ -182,9 +222,12 @@ impl JSONToken {
 			"]" => JSONToken::BracketClose,
 			"," => JSONToken::Comma,
 			"-" => JSONToken::Minus,
+			"\"" => JSONToken::DoubleQuote,
 			s => {
 				if let Ok(n) = s.parse() {
-					JSONToken::Number(n)
+					JSONToken::Digit(n)
+				} else if s != "\\" {
+					JSONToken::String(s.to_string())
 				} else {
 					return None;
 				}
@@ -204,7 +247,10 @@ impl JSONToken {
 			JSONToken::Comma => Cow::from(","),
 			JSONToken::Minus => Cow::from("-"),
 			JSONToken::Decimal => Cow::from("."),
-			JSONToken::Number(n) => Cow::from(format!("{n}")),
+			JSONToken::Digit(n) => Cow::from(format!("{n}")),
+			JSONToken::DoubleQuote => Cow::from("\""),
+			JSONToken::String(s) => Cow::from(s.clone()),
+			JSONToken::AnyString => panic!(),
 		}
 	}
 
@@ -244,6 +290,7 @@ impl<'schema> JSONParserState<'schema> {
 	pub fn value(&self) -> Option<Value> {
 		match self {
 			JSONParserState::Start => None,
+			JSONParserState::InString(s) => Some(Value::String(s.clone())),
 			JSONParserState::InObject => Some(json!({})),
 			JSONParserState::InArray(array_state) => {
 				let mut items = array_state.items.clone();
@@ -257,7 +304,7 @@ impl<'schema> JSONParserState<'schema> {
 		}
 	}
 
-	pub fn advance(&mut self, input: JSONToken, item_schema: Option<&'schema JSONSchema>) -> Result<(), BiaserError> {
+	pub fn advance(&mut self, input: &JSONToken, item_schema: Option<&'schema JSONSchema>) -> Result<(), BiaserError> {
 		*self = match self {
 			JSONParserState::Start => match input {
 				JSONToken::True => JSONParserState::End(json! { true }),
@@ -269,17 +316,36 @@ impl<'schema> JSONParserState<'schema> {
 					value_state: Box::new(JSONBiaser::new(item_schema.unwrap())),
 				}),
 				JSONToken::Minus => JSONParserState::InInteger(String::from("-")),
-				JSONToken::Number(n) => JSONParserState::InInteger(format!("{n}")),
-				_ => return Err(BiaserError::InvalidToken(input)),
+				JSONToken::Digit(n) => JSONParserState::InInteger(format!("{n}")),
+				JSONToken::DoubleQuote => JSONParserState::InString(String::from("")),
+				_ => return Err(BiaserError::InvalidToken(input.clone())),
+			},
+			JSONParserState::InString(s) => match input {
+				JSONToken::DoubleQuote => JSONParserState::End(json! { s }),
+				JSONToken::String(new_string) => {
+					if new_string.ends_with('\"') {
+						let string_value = format!("{s}{}", new_string.strip_suffix('\"').unwrap_or(""));
+						JSONParserState::End(Value::String(string_value))
+					} else {
+						assert!(!new_string.contains('\"'), "String token may not contain double quote");
+						JSONParserState::InString(format!("{s}{new_string}"))
+					}
+				}
+				t => {
+					// This could be any other token but now inside the string
+					let new_string = t.to_string();
+					assert!(!new_string.contains('\"'), "String token may not contain double quote");
+					JSONParserState::InString(format!("{s}{new_string}"))
+				}
 			},
 			JSONParserState::InInteger(num_string) => match input {
-				JSONToken::Number(n) => JSONParserState::InInteger(format!("{num_string}{n}")),
+				JSONToken::Digit(n) => JSONParserState::InInteger(format!("{num_string}{n}")),
 				JSONToken::Decimal => JSONParserState::InInteger(format!("{num_string}.")),
-				_ => return Err(BiaserError::InvalidToken(input)),
+				_ => return Err(BiaserError::InvalidToken(input.clone())),
 			},
 			JSONParserState::InObject => match input {
 				JSONToken::CurlyClose => JSONParserState::End(json! { {} }),
-				_ => return Err(BiaserError::InvalidToken(input)),
+				_ => return Err(BiaserError::InvalidToken(input.clone())),
 			},
 			JSONParserState::InArray(array_state) => {
 				let mut array_state: JSONParserArrayState = array_state.clone();
@@ -299,15 +365,15 @@ impl<'schema> JSONParserState<'schema> {
 						}
 						JSONParserState::End(Value::Array(array_state.items))
 					}
-					t if next_valid_item_tokens.contains(&t) => {
+					t if next_valid_item_tokens.contains(t) => {
 						array_state.value_state.advance(input)?;
 						JSONParserState::InArray(array_state)
 					}
-					t => return Err(BiaserError::InvalidToken(t)),
+					t => return Err(BiaserError::InvalidToken(t.clone())),
 				}
 			}
 
-			JSONParserState::End(_) => return Err(BiaserError::InvalidToken(input)),
+			JSONParserState::End(_) => return Err(BiaserError::InvalidToken(input.clone())),
 		};
 		Ok(())
 	}
@@ -328,7 +394,7 @@ impl<'schema> JSONBiaser<'schema> {
 		}
 	}
 
-	pub fn advance(&mut self, input: JSONToken) -> Result<(), BiaserError> {
+	pub fn advance(&mut self, input: &JSONToken) -> Result<(), BiaserError> {
 		self.state.advance(input, self.child_item_schema())
 	}
 
@@ -339,6 +405,7 @@ impl<'schema> JSONBiaser<'schema> {
 			JSONParserState::InArray(ref _array_state) => false,
 			JSONParserState::InInteger(ref s) => !s.is_empty() && s.parse::<f32>().is_ok() && !s.ends_with('.'),
 			JSONParserState::End(_) => true,
+			JSONParserState::InString(_) => false,
 		}
 	}
 
@@ -346,6 +413,9 @@ impl<'schema> JSONBiaser<'schema> {
 		match &self.state {
 			JSONParserState::End(_) => vec![],
 			JSONParserState::InObject => vec![JSONToken::CurlyClose],
+			JSONParserState::InString(_) => {
+				vec![JSONToken::DoubleQuote, JSONToken::AnyString] // Any string
+			}
 			JSONParserState::InArray(array_state) => {
 				let JSONSchema::Array { min_items, max_items, .. } = self.schema else {
 					panic!();
@@ -389,9 +459,9 @@ impl<'schema> JSONBiaser<'schema> {
 
 				// First digit cannot be zero
 				let mut digits: Vec<JSONToken> = if s == "-" {
-					(1..=9).map(JSONToken::Number).collect()
+					(1..=9).map(JSONToken::Digit).collect()
 				} else {
-					(0..=9).map(JSONToken::Number).collect()
+					(0..=9).map(JSONToken::Digit).collect()
 				};
 
 				// Limit the length of a number literal to what fits in a 32 bit integer
@@ -444,6 +514,9 @@ impl<'schema> JSONBiaser<'schema> {
 				JSONSchema::Object => {
 					vec![JSONToken::CurlyOpen]
 				}
+				JSONSchema::String {} => {
+					vec![JSONToken::DoubleQuote]
+				}
 				JSONSchema::Number { max, min, max_decimals: _ } => {
 					// First digit cannot be zero
 					let mut d: Vec<JSONToken> = (1..=9)
@@ -451,7 +524,7 @@ impl<'schema> JSONBiaser<'schema> {
 							let df = *d as f64;
 							df <= max.unwrap_or(df) && df >= min.unwrap_or(df)
 						})
-						.map(JSONToken::Number)
+						.map(JSONToken::Digit)
 						.collect();
 
 					if min.unwrap_or(-1.0) < 0.0 || max.unwrap_or(-1.0) < 0.0 {
