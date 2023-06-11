@@ -201,6 +201,7 @@ impl BackendSession {
 				tracing::debug!("only one token in bias, that will be our next: {:?}", biaser_bias[0]);
 				// Still need to feed it to our model!
 				let only_possible_token = biaser_bias[0].0;
+				let start = Instant::now();
 				self.session.feed_prompt(
 					self.model.as_ref().as_ref(),
 					&inference_params,
@@ -208,6 +209,13 @@ impl BackendSession {
 					&mut OutputRequest::default(),
 					|_| -> Result<InferenceFeedback, GenerateError> { Ok(InferenceFeedback::Continue) },
 				)?;
+				tokens.push(only_possible_token);
+				completion_stats.add(&InferenceStats {
+					feed_prompt_duration: Instant::now().duration_since(start),
+					prompt_tokens: 1,
+					predict_duration: Duration::ZERO,
+					predict_tokens: 0,
+				});
 				only_possible_token
 			} else {
 				// Sample a token using the model
