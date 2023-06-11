@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 #[cfg(test)]
 use std::{path::Path, sync::Arc};
 
@@ -55,6 +56,90 @@ pub fn test_string_enum_parser() {
 
 #[traced_test]
 #[test]
+pub fn test_empty_object_parser() {
+	let schema = JSONSchema::Object {
+		required: vec![],
+		properties: HashMap::new(),
+	};
+
+	let mut biaser = JSONBiaser::new(&schema);
+
+	// '{}'
+	assert_eq!(biaser.next_valid_tokens(), vec![JSONToken::CurlyOpen]);
+	biaser.advance(&JSONToken::CurlyOpen).unwrap();
+	assert_eq!(biaser.next_valid_tokens(), vec![JSONToken::CurlyClose]);
+	biaser.advance(&JSONToken::CurlyClose).unwrap();
+	assert_eq!(biaser.next_valid_tokens(), vec![]);
+}
+
+#[traced_test]
+#[test]
+pub fn test_object_parser() {
+	let mut fields = HashMap::new();
+	fields.insert(
+		"first_name".to_string(),
+		Box::new(JSONSchema::String {
+			max_length: Some(5),
+			r#enum: None,
+		}),
+	);
+	fields.insert(
+		"last_name".to_string(),
+		Box::new(JSONSchema::String {
+			max_length: Some(7),
+			r#enum: None,
+		}),
+	);
+	let schema = JSONSchema::Object {
+		required: vec!["first_name".to_string(), "last_name".to_string()],
+		properties: fields,
+	};
+
+	let mut biaser = JSONBiaser::new(&schema);
+
+	// '{"'
+	assert_eq!(biaser.next_valid_tokens(), vec![JSONToken::CurlyOpen]);
+	biaser.advance(&JSONToken::CurlyOpen).unwrap();
+	assert_eq!(biaser.next_valid_tokens(), vec![JSONToken::DoubleQuote]);
+	biaser.advance(&JSONToken::DoubleQuote).unwrap();
+
+	// First we expect the 'first_name' key
+	assert_eq!(biaser.next_valid_tokens(), vec![JSONToken::String("first_name".to_string())]);
+	biaser.advance(&JSONToken::String("first_".to_string())).unwrap();
+	assert_eq!(biaser.next_valid_tokens(), vec![JSONToken::String("name".to_string())]);
+	biaser.advance(&JSONToken::String("name".to_string())).unwrap();
+	assert_eq!(biaser.next_valid_tokens(), vec![JSONToken::DoubleQuote]);
+	biaser.advance(&JSONToken::DoubleQuote).unwrap();
+	assert_eq!(biaser.next_valid_tokens(), vec![JSONToken::Colon]);
+	biaser.advance(&JSONToken::Colon).unwrap(); // {"first_name": at this point
+	assert_eq!(biaser.next_valid_tokens(), vec![JSONToken::DoubleQuote]);
+	biaser.advance(&JSONToken::DoubleQuote).unwrap();
+	biaser.advance(&JSONToken::String("tommy".to_string())).unwrap();
+	biaser.advance(&JSONToken::DoubleQuote).unwrap(); // {"first_name":"tommy" at this point
+	assert_eq!(biaser.next_valid_tokens(), vec![JSONToken::Comma]); // comma, nothing else, because we need that last_name key
+	biaser.advance(&JSONToken::Comma).unwrap(); // {"first_name":"tommy", at this point
+
+	assert_eq!(biaser.next_valid_tokens(), vec![JSONToken::DoubleQuote]);
+	biaser.advance(&JSONToken::DoubleQuote).unwrap();
+	assert_eq!(biaser.next_valid_tokens(), vec![JSONToken::String("last_name".to_string())]);
+	biaser.advance(&JSONToken::String("last_name".to_string())).unwrap();
+	assert_eq!(biaser.next_valid_tokens(), vec![JSONToken::DoubleQuote]);
+	biaser.advance(&JSONToken::DoubleQuote).unwrap(); // {"first_name":"tommy","last_name" at this point
+	assert_eq!(biaser.next_valid_tokens(), vec![JSONToken::Colon]);
+	biaser.advance(&JSONToken::Colon).unwrap();
+	biaser.advance(&JSONToken::DoubleQuote).unwrap();
+	biaser.advance(&JSONToken::String("vorst".to_string())).unwrap();
+	biaser.advance(&JSONToken::DoubleQuote).unwrap();
+	assert_eq!(biaser.next_valid_tokens(), vec![JSONToken::CurlyClose]); // All keys have been gathered
+	biaser.advance(&JSONToken::CurlyClose).unwrap();
+	assert_eq!(biaser.next_valid_tokens(), vec![]); // Object is done
+	assert!(biaser.can_end());
+
+	println!("{:?}", biaser.next_valid_tokens());
+}
+
+#[traced_test]
+#[test]
 pub fn test_array_parser() {
 	let schema = JSONSchema::Array {
 		items: Box::new(JSONSchema::Boolean),
@@ -87,6 +172,51 @@ pub fn test_array_parser() {
 
 #[traced_test]
 #[test]
+pub fn test_json_biaser_objects() {
+	let model = llm::load_dynamic(
+		ModelArchitecture::GptNeoX,
+		Path::new("data/pythia-160m-q4_0.bin"),
+		llm::VocabularySource::Model,
+		ModelParameters::default(),
+		|_progress| {},
+	)
+	.unwrap();
+
+	test_json_bias(
+		JSONSchema::Object {
+			required: vec![],
+			properties: HashMap::new(),
+		},
+		model.as_ref(),
+	);
+
+	let mut fields = HashMap::new();
+	fields.insert(
+		"first_name".to_string(),
+		Box::new(JSONSchema::String {
+			max_length: Some(5),
+			r#enum: None,
+		}),
+	);
+	fields.insert(
+		"last_name".to_string(),
+		Box::new(JSONSchema::String {
+			max_length: Some(7),
+			r#enum: None,
+		}),
+	);
+
+	test_json_bias(
+		JSONSchema::Object {
+			required: fields.keys().cloned().collect(),
+			properties: fields,
+		},
+		model.as_ref(),
+	);
+}
+
+#[traced_test]
+#[test]
 pub fn test_json_biaser() {
 	let model = llm::load_dynamic(
 		ModelArchitecture::GptNeoX,
@@ -100,8 +230,6 @@ pub fn test_json_biaser() {
 	test_json_bias(JSONSchema::Boolean, model.as_ref());
 
 	test_json_bias(JSONSchema::Null, model.as_ref());
-
-	test_json_bias(JSONSchema::Object, model.as_ref());
 
 	test_json_bias(
 		JSONSchema::String {
@@ -187,7 +315,19 @@ fn test_json_bias(schema: JSONSchema, model: &dyn Model) {
 			if next_valid_tokens.is_empty() {
 				break;
 			}
-			println!("next_valid_tokens={next_valid_tokens:?}");
+
+			if next_valid_tokens.len() < 15 {
+				println!(
+					"next_valid_tokens={}",
+					next_valid_tokens
+						.iter()
+						.map(|tid| String::from_utf8_lossy(&vocab.decode(vec![tid.0], false)).to_string())
+						.collect::<Vec<String>>()
+						.join(" ")
+				);
+			} else {
+				println!("next_valid_tokens: {} tokens", next_valid_tokens.len());
+			}
 
 			let sampler = samplers::TopPTopK {
 				bias_tokens: TokenBias::new(next_valid_tokens),
@@ -211,6 +351,11 @@ fn test_json_bias(schema: JSONSchema, model: &dyn Model) {
 					if let Some(output) = result_buffer.push(&out) {
 						result.push_str(&output);
 					}
+
+					if vocab.decode(vec![out_token], false).is_empty() {
+						panic!("empty token generated: {out_token}");
+					}
+
 					println!(
 						"Token: {}, RESULT: {result} next valid tokens: {:?}",
 						String::from_utf8_lossy(&vocab.decode(vec![out_token], false)),

@@ -1,11 +1,12 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::fmt::Display;
 
 use llm::TokenizationError;
 use llm::{TokenId, Vocabulary};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use serde_json::Value;
+use serde_json::{json, Map};
 use thiserror::Error;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -13,7 +14,10 @@ use thiserror::Error;
 pub enum JSONSchema {
 	Boolean,
 	Null,
-	Object,
+	Object {
+		required: Vec<String>,
+		properties: HashMap<String, Box<JSONSchema>>,
+	},
 	Number {
 		min: Option<f64>,
 		max: Option<f64>,
@@ -35,7 +39,21 @@ impl JSONSchema {
 		match (self, value) {
 			(JSONSchema::Boolean, Value::Bool(_)) => true,
 			(JSONSchema::Null, Value::Null) => true,
-			(JSONSchema::Object, Value::Object(_)) => true,
+			(JSONSchema::Object { required, properties }, Value::Object(object_value)) => {
+				// All required keys must be present
+				if !required.iter().all(|field| object_value.contains_key(field)) {
+					false
+				} else {
+					// All keys that are in the object must conform to their schemas
+					object_value.iter().all(|(field, field_value)| {
+						let Some(field_schema) = properties.get(field) else {
+							return false; // No schema for this field
+						};
+
+						field_schema.is_valid(field_value)
+					})
+				}
+			}
 			(JSONSchema::Array { items, min_items, max_items }, Value::Array(array_items)) => {
 				if let Some(min_items) = min_items {
 					if *min_items > array_items.len() {
@@ -83,12 +101,28 @@ impl<'schema> std::fmt::Debug for JSONParserArrayState<'schema> {
 }
 
 #[derive(Debug, Clone)]
+enum JSONParserObjectPartState<'schema> {
+	BeforeKey,
+	InKey(String),
+	AfterKey(String),
+	InValue { key: String, value: Box<JSONBiaser<'schema>> },
+	Finished,
+}
+
+#[derive(Debug, Clone)]
+struct JSONParserObjectState<'schema> {
+	so_far: Map<String, Value>,
+	object_schema: &'schema JSONSchema,
+	part_state: JSONParserObjectPartState<'schema>,
+}
+
+#[derive(Debug, Clone)]
 enum JSONParserState<'schema> {
 	/// No input received yet
 	Start,
 
 	/// Object opening curly brace encountered
-	InObject,
+	InObject(JSONParserObjectState<'schema>),
 
 	/// Array opening bracket encountered
 	InArray(JSONParserArrayState<'schema>),
@@ -140,6 +174,10 @@ impl<'schema> Biaser for JSONBiaser<'schema> {
 							let Ok(s) = String::from_utf8(bytes) else {
 								return false;
 							};
+
+							if s.is_empty() {
+								return false;
+							}
 
 							if s.contains('\"') || s.contains('\n') || s.contains('\t') || s.contains('\r') {
 								return false;
@@ -231,6 +269,7 @@ pub enum JSONToken {
 	AnyOf(Vec<String>),                      // Any string from the list (or a prefix of it)
 	BracketClose,
 	BracketOpen,
+	Colon,
 	Comma,
 	CurlyClose,
 	CurlyOpen,
@@ -250,6 +289,7 @@ impl JSONToken {
 			"true" => JSONToken::True,
 			"false" => JSONToken::False,
 			"null" => JSONToken::Null,
+			":" => JSONToken::Colon,
 			"." => JSONToken::Decimal,
 			"{" => JSONToken::CurlyOpen,
 			"}" => JSONToken::CurlyClose,
@@ -275,6 +315,7 @@ impl JSONToken {
 			JSONToken::True => Cow::from("true"),
 			JSONToken::False => Cow::from("false"),
 			JSONToken::Null => Cow::from("null"),
+			JSONToken::Colon => Cow::from(":"),
 			JSONToken::CurlyOpen => Cow::from("{"),
 			JSONToken::CurlyClose => Cow::from("}"),
 			JSONToken::BracketOpen => Cow::from("["),
@@ -319,6 +360,7 @@ impl Display for JSONToken {
 			JSONToken::BracketClose
 			| JSONToken::BracketOpen
 			| JSONToken::Comma
+			| JSONToken::Colon
 			| JSONToken::CurlyClose
 			| JSONToken::CurlyOpen
 			| JSONToken::Decimal
@@ -339,12 +381,122 @@ pub enum BiaserError {
 	InvalidToken(JSONToken),
 }
 
+impl<'schema> JSONParserObjectState<'schema> {
+	pub fn advance(&mut self, input: &JSONToken) -> Result<(), BiaserError> {
+		let JSONSchema::Object { required: _, properties } = self.object_schema else {
+			panic!("parsing a JSON object with some other schema than an object schema");
+		};
+
+		self.part_state = match (&self.part_state, input) {
+			(JSONParserObjectPartState::BeforeKey, JSONToken::CurlyClose) => JSONParserObjectPartState::Finished,
+			(JSONParserObjectPartState::BeforeKey, JSONToken::DoubleQuote) => JSONParserObjectPartState::InKey(String::from("")),
+			(JSONParserObjectPartState::InKey(k), JSONToken::DoubleQuote) => JSONParserObjectPartState::AfterKey(k.clone()),
+			// TODO: accept other tokens (e.g. comma?) as next token
+			(JSONParserObjectPartState::InKey(k), JSONToken::String(s)) => JSONParserObjectPartState::InKey(format!("{k}{s}")),
+			(JSONParserObjectPartState::AfterKey(k), JSONToken::Colon) => {
+				let Some(value_schema) = properties.get(k) else {
+					panic!("invalid key");
+				};
+				JSONParserObjectPartState::InValue {
+					key: k.clone(),
+					value: Box::new(JSONBiaser::new(value_schema)),
+				}
+			}
+			(JSONParserObjectPartState::InValue { key, value }, JSONToken::Comma) if value.can_end() => {
+				self.so_far.insert(key.clone(), value.state.value().unwrap());
+				JSONParserObjectPartState::BeforeKey
+			}
+			(JSONParserObjectPartState::InValue { key, value }, JSONToken::CurlyClose)
+				if value.can_end() && self.remaining_required_keys().len() == 1 =>
+			{
+				self.so_far.insert(key.clone(), value.state.value().unwrap());
+				JSONParserObjectPartState::Finished
+			}
+			(JSONParserObjectPartState::InValue { key, value }, t) => {
+				// TODO remove clone
+				let mut value = value.clone();
+				value.advance(t)?;
+				JSONParserObjectPartState::InValue { key: key.clone(), value }
+			}
+
+			_ => return Err(BiaserError::InvalidToken(input.clone())),
+		};
+		Ok(())
+	}
+
+	fn remaining_required_keys(&self) -> Vec<&'schema String> {
+		let JSONSchema::Object { required, properties: _ } = self.object_schema else {
+			panic!("parsing a JSON object with some other schema than an object schema");
+		};
+
+		required.iter().filter(|r| !self.so_far.contains_key(*r)).collect()
+	}
+
+	pub fn next_valid_tokens(&self) -> Vec<JSONToken> {
+		match &self.part_state {
+			JSONParserObjectPartState::Finished => vec![],
+			JSONParserObjectPartState::BeforeKey => {
+				if self.remaining_required_keys().is_empty() {
+					return vec![JSONToken::CurlyClose];
+				}
+				vec![JSONToken::DoubleQuote]
+			}
+			JSONParserObjectPartState::InKey(k) => {
+				let rk = self.remaining_required_keys();
+				let next_key = rk.first().unwrap();
+				let key_remainder = next_key.strip_prefix(k).unwrap_or("");
+				if key_remainder.is_empty() {
+					// key is finished
+					vec![JSONToken::DoubleQuote]
+				} else {
+					// waiting for a part of the next key still
+					vec![JSONToken::AnyOf(vec![key_remainder.to_string()])]
+				}
+			}
+			JSONParserObjectPartState::InValue { key: _, value } => {
+				let mut valid_next = value.next_valid_tokens();
+				if value.can_end() {
+					if self.remaining_required_keys().len() == 1 {
+						valid_next.push(JSONToken::CurlyClose);
+					} else {
+						valid_next.push(JSONToken::Comma);
+					}
+				}
+				valid_next
+			}
+			JSONParserObjectPartState::AfterKey(_) => vec![JSONToken::Colon],
+		}
+	}
+
+	fn can_end(&self) -> bool {
+		matches!(self.part_state, JSONParserObjectPartState::Finished)
+	}
+}
+
 impl<'schema> JSONParserState<'schema> {
 	pub fn value(&self) -> Option<Value> {
 		match self {
 			JSONParserState::Start => None,
 			JSONParserState::InString(s) => Some(Value::String(s.clone())),
-			JSONParserState::InObject => Some(json!({})),
+			JSONParserState::InObject(object_state) => {
+				let mut object_value = object_state.so_far.clone();
+				match &object_state.part_state {
+					JSONParserObjectPartState::BeforeKey => {}
+					JSONParserObjectPartState::Finished => return Some(Value::Object(object_value)),
+					JSONParserObjectPartState::AfterKey(_) => return None, // Would return half an object
+					JSONParserObjectPartState::InKey(_) => return None,    // Would return half an object
+					JSONParserObjectPartState::InValue { key, value } => {
+						if !value.can_end() {
+							return None; // Would return half a value
+						}
+						let Some(jv) = value.state.value() else {
+							return None; // No value for key
+						};
+						object_value.insert(key.clone(), jv);
+					}
+				}
+				Some(Value::Object(object_value))
+			}
 			JSONParserState::InArray(array_state) => {
 				let mut items = array_state.items.clone();
 				if let Some(v) = array_state.value_state.state.value() {
@@ -363,7 +515,11 @@ impl<'schema> JSONParserState<'schema> {
 				JSONToken::True => JSONParserState::End(json! { true }),
 				JSONToken::False => JSONParserState::End(json! { false }),
 				JSONToken::Null => JSONParserState::End(json! { null }),
-				JSONToken::CurlyOpen => JSONParserState::InObject,
+				JSONToken::CurlyOpen => JSONParserState::InObject(JSONParserObjectState {
+					so_far: Map::new(),
+					object_schema: item_schema.unwrap(),
+					part_state: JSONParserObjectPartState::BeforeKey,
+				}),
 				JSONToken::BracketOpen => JSONParserState::InArray(JSONParserArrayState {
 					items: vec![],
 					value_state: Box::new(JSONBiaser::new(item_schema.unwrap())),
@@ -396,10 +552,11 @@ impl<'schema> JSONParserState<'schema> {
 				JSONToken::Decimal => JSONParserState::InInteger(format!("{num_string}.")),
 				_ => return Err(BiaserError::InvalidToken(input.clone())),
 			},
-			JSONParserState::InObject => match input {
-				JSONToken::CurlyClose => JSONParserState::End(json! { {} }),
-				_ => return Err(BiaserError::InvalidToken(input.clone())),
-			},
+			JSONParserState::InObject(object_state) => {
+				let mut object_state = object_state.clone();
+				object_state.advance(input)?;
+				JSONParserState::InObject(object_state)
+			}
 			JSONParserState::InArray(array_state) => {
 				let mut array_state: JSONParserArrayState = array_state.clone();
 				let next_valid_item_tokens = array_state.value_state.next_valid_tokens();
@@ -443,6 +600,7 @@ impl<'schema> JSONBiaser<'schema> {
 	fn child_item_schema(&self) -> Option<&'schema JSONSchema> {
 		match &self.schema {
 			JSONSchema::Array { items, .. } => Some(items.as_ref()),
+			JSONSchema::Object { .. } => Some(self.schema),
 			_ => None,
 		}
 	}
@@ -454,7 +612,7 @@ impl<'schema> JSONBiaser<'schema> {
 	pub fn can_end(&self) -> bool {
 		match self.state {
 			JSONParserState::Start => false,
-			JSONParserState::InObject => false,
+			JSONParserState::InObject(ref object_state) => object_state.can_end(),
 			JSONParserState::InArray(ref _array_state) => false,
 			JSONParserState::InInteger(ref s) => !s.is_empty() && s.parse::<f32>().is_ok() && !s.ends_with('.'),
 			JSONParserState::End(_) => true,
@@ -465,7 +623,7 @@ impl<'schema> JSONBiaser<'schema> {
 	pub fn next_valid_tokens(&self) -> Vec<JSONToken> {
 		match &self.state {
 			JSONParserState::End(_) => vec![],
-			JSONParserState::InObject => vec![JSONToken::CurlyClose],
+			JSONParserState::InObject(object_state) => object_state.next_valid_tokens(),
 			JSONParserState::InString(string_so_far) => {
 				let JSONSchema::String { max_length, r#enum: string_values } = self.schema else {
 					panic!("in string without string schema");
@@ -612,7 +770,7 @@ impl<'schema> JSONBiaser<'schema> {
 				JSONSchema::Null => {
 					vec![JSONToken::Null]
 				}
-				JSONSchema::Object => {
+				JSONSchema::Object { .. } => {
 					vec![JSONToken::CurlyOpen]
 				}
 				JSONSchema::String { .. } => {
