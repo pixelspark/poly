@@ -22,3 +22,4 @@ tower = { version = "0.4.13", features=["limit", "tracing"] }
 tower-http = { version = "0.4.0", features = ["fs", "cors", "trace"] }
 tracing = "0.1.37"
 tracing-subscriber = "0.3.17"
+tracing-test = "0.2.4"

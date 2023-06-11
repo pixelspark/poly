@@ -44,11 +44,12 @@ postfix = "<|im_end|><|im_start|>assistant\n" # answer<|im_end|>
 bias_prompt = "<|im_start|>system\nSay 'true' when the user statement was true, 'false' otherwise.<|im_start|>assistant\n"
 private_tokens = ["<|im_start|>", "<|im_end|>"]
 
-# JSON schema for the answer. Possible values are:
-# { type = "number", min = 0, max = 1000, max_decimals = 2 }
-# { type = "array", items = <any allowed schema>, min_items = 1, max_items = 10 }
+# JSON schema for the answer. Possible values are (attributes suffixed with '?' are not required):
+# { type = "number", min? = 0, max? = 1000, max_decimals? = 2 }
+# { type = "array", items? = <any allowed schema defining the schema for items in the array>, min_items? = 1, max_items? = 10 }
 # { type = "boolean" }
 # { type = "null" }
 # { type = "object" } (currently produces an empty object always)
+# { type = "string", max_length? = 12, enum? = ["foo", "bar", "baz"] }
 schema = { type = "boolean" }
 temperature = 1

@@ -26,6 +26,7 @@ pub enum JSONSchema {
 	},
 	String {
 		max_length: Option<usize>,
+		r#enum: Option<Vec<String>>,
 	},
 }
 
@@ -117,28 +118,51 @@ pub trait Biaser {
 impl<'schema> Biaser for JSONBiaser<'schema> {
 	fn bias(&self, vocabulary: &Vocabulary, eot_token: TokenId) -> Vec<(TokenId, f32)> {
 		let next_valid_json_tokens = self.next_valid_tokens();
-		tracing::trace!(
-			"next valid tokens: {}",
-			next_valid_json_tokens
-				.iter()
-				.map(|x| x.to_string().to_string())
-				.collect::<Vec<String>>()
-				.join(" ")
-		);
+		tracing::trace!("next valid tokens: {:?}", next_valid_json_tokens);
 
 		// Translate the next valid JSON tokens to model tokens
 		let mut next_valid_tokens: Vec<(TokenId, f32)> = next_valid_json_tokens
 			.iter()
 			.flat_map(|json_token| match json_token {
+				// Any string value from the list, or a prefix of one of the values, is allowed
+				JSONToken::AnyOf(string_values) => {
+					debug_assert!(
+						string_values.iter().all(|s| !s.is_empty()),
+						"no empty strings allowed in JSONToken::AnyOf"
+					);
+
+					let valid_tokens: Vec<TokenId> = (0..=(vocabulary.len() - 1) as TokenId)
+						.filter(|token_id| {
+							if *token_id == eot_token {
+								return false;
+							}
+							let bytes = vocabulary.token(*token_id as usize);
+							let Ok(s) = String::from_utf8(bytes) else {
+								return false;
+							};
+
+							if s.contains('\"') || s.contains('\n') || s.contains('\t') || s.contains('\r') {
+								return false;
+							}
+
+							return string_values.iter().any(|sv| sv.starts_with(&s));
+						})
+						.collect();
+
+					tracing::debug!("any-of: total tokens: {} valid: {}", vocabulary.len(), valid_tokens.len());
+					tracing::trace!("any-of prefixes: {string_values:?} valid: {valid_tokens:?}");
+
+					valid_tokens.iter().map(|vt| (*vt, TOKEN_ALLOWED)).collect()
+				}
+
+				// Basically any token is allowed if it fits the max length. Filter them from the vocabulary
 				JSONToken::AnyString { max_length } => {
-					// Basically any token is allowed if it fits the max length. Filter them from the vocabulary
 					let mut valid_tokens: Vec<TokenId> = (0..=(vocabulary.len() - 1) as TokenId)
 						.filter(|token_id| {
 							if *token_id == eot_token {
 								return false;
 							}
 							let bytes = vocabulary.token(*token_id as usize);
-							//println!("VOCAB TOKEN {token_id}={:?}", String::from_utf8(bytes.clone()));
 							let Ok(s) = String::from_utf8(bytes) else {
 								return false;
 							};
@@ -159,7 +183,7 @@ impl<'schema> Biaser for JSONBiaser<'schema> {
 
 					valid_tokens.push(JSONToken::DoubleQuote.token_id(vocabulary).unwrap());
 
-					println!("total tokens: {} valid: {}", vocabulary.len(), valid_tokens.len());
+					tracing::debug!("total tokens: {} valid: {}", vocabulary.len(), valid_tokens.len());
 
 					valid_tokens.iter().map(|vt| (*vt, TOKEN_ALLOWED)).collect()
 				}
@@ -181,15 +205,7 @@ impl<'schema> Biaser for JSONBiaser<'schema> {
 	fn advance(&mut self, vocabulary: &Vocabulary, token: TokenId) {
 		let out_json_token = JSONToken::from_token(vocabulary, token).expect("valid token");
 		self.advance(&out_json_token).unwrap();
-		tracing::debug!(
-			"Token: {:?}, next valid tokens: {:?}",
-			&out_json_token,
-			self.next_valid_tokens()
-				.iter()
-				.map(|x| x.to_string().to_string())
-				.collect::<Vec<String>>()
-				.join(" "),
-		);
+		tracing::debug!("Token: {:?}, next valid tokens: {:?}", &out_json_token, self.next_valid_tokens());
 	}
 }
 
@@ -212,6 +228,7 @@ pub struct JSONBiaser<'schema> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JSONToken {
 	AnyString { max_length: Option<usize> }, // Any string except double quote (used in next_valid_token)
+	AnyOf(Vec<String>),                      // Any string from the list (or a prefix of it)
 	BracketClose,
 	BracketOpen,
 	Comma,
@@ -253,8 +270,8 @@ impl JSONToken {
 		})
 	}
 
-	pub fn to_string(&self) -> Cow<'static, str> {
-		match self {
+	pub fn to_string(&self) -> Option<Cow<'static, str>> {
+		Some(match self {
 			JSONToken::True => Cow::from("true"),
 			JSONToken::False => Cow::from("false"),
 			JSONToken::Null => Cow::from("null"),
@@ -268,8 +285,8 @@ impl JSONToken {
 			JSONToken::Digit(n) => Cow::from(format!("{n}")),
 			JSONToken::DoubleQuote => Cow::from("\""),
 			JSONToken::String(s) => Cow::from(s.clone()),
-			JSONToken::AnyString { .. } => panic!(),
-		}
+			JSONToken::AnyString { .. } | JSONToken::AnyOf(_) => return None,
+		})
 	}
 
 	pub fn from_token(vocab: &Vocabulary, token: TokenId) -> Result<JSONToken, TokenizationError> {
@@ -279,7 +296,9 @@ impl JSONToken {
 	}
 
 	pub fn token_id(&self, vocab: &Vocabulary) -> Option<TokenId> {
-		match vocab.tokenize(&self.to_string(), false) {
+		let Some(s) = self.to_string() else { return None };
+
+		match vocab.tokenize(&s, false) {
 			Ok(tokens) => {
 				if tokens.len() != 1 {
 					None
@@ -294,7 +313,23 @@ impl JSONToken {
 
 impl Display for JSONToken {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{}", self.to_string())
+		match self {
+			JSONToken::AnyOf(s) => write!(f, "<any of: {}>", s.join(", ")),
+			JSONToken::AnyString { max_length } => write!(f, "<any string max_length={max_length:?}>"),
+			JSONToken::BracketClose
+			| JSONToken::BracketOpen
+			| JSONToken::Comma
+			| JSONToken::CurlyClose
+			| JSONToken::CurlyOpen
+			| JSONToken::Decimal
+			| JSONToken::Digit(_)
+			| JSONToken::DoubleQuote
+			| JSONToken::False
+			| JSONToken::Minus
+			| JSONToken::Null
+			| JSONToken::String(_)
+			| JSONToken::True => write!(f, "{}", self.to_string().unwrap()),
+		}
 	}
 }
 
@@ -351,7 +386,7 @@ impl<'schema> JSONParserState<'schema> {
 				}
 				t => {
 					// This could be any other token but now inside the string
-					let new_string = t.to_string();
+					let new_string = t.to_string().unwrap_or(Cow::from(""));
 					assert!(!new_string.contains('\"'), "String token may not contain double quote");
 					JSONParserState::InString(format!("{s}{new_string}"))
 				}
@@ -432,7 +467,7 @@ impl<'schema> JSONBiaser<'schema> {
 			JSONParserState::End(_) => vec![],
 			JSONParserState::InObject => vec![JSONToken::CurlyClose],
 			JSONParserState::InString(string_so_far) => {
-				let JSONSchema::String { max_length } = self.schema else {
+				let JSONSchema::String { max_length, r#enum: string_values } = self.schema else {
 					panic!("in string without string schema");
 				};
 
@@ -440,6 +475,43 @@ impl<'schema> JSONBiaser<'schema> {
 				if max_next_length == Some(0) {
 					// Must end string now
 					return vec![JSONToken::DoubleQuote];
+				}
+
+				// There are pre-set string values
+				if let Some(string_values) = string_values {
+					let mut has_valid = false;
+					let possible_remainders: Vec<String> = string_values
+						.iter()
+						.filter_map(|ps| {
+							// Remove any strings that are too long to begin with
+							if let Some(max_length) = max_length {
+								if ps.len() > *max_length {
+									return None;
+								}
+							}
+
+							if ps == string_so_far {
+								has_valid = true;
+								None
+							} else {
+								// Find strings that have the current string 'so far' as prefix. Then remove that prefix
+								if ps.starts_with(string_so_far) {
+									ps.strip_prefix(string_so_far).map(|s| s.to_string())
+								} else {
+									None
+								}
+							}
+						})
+						.collect();
+
+					let mut next_tokens = vec![];
+					if !possible_remainders.is_empty() {
+						next_tokens.push(JSONToken::AnyOf(possible_remainders));
+					}
+					if has_valid {
+						next_tokens.push(JSONToken::DoubleQuote);
+					}
+					return next_tokens;
 				}
 
 				// Any string

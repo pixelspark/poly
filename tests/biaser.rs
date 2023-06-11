@@ -11,7 +11,9 @@ use llmd::bias::{Biaser, BiaserError, JSONToken};
 use llmd::bias::{JSONBiaser, JSONSchema};
 use rand::SeedableRng;
 use serde_json::Value;
+use tracing_test::traced_test;
 
+#[traced_test]
 #[test]
 pub fn test_parser() {
 	let schema = JSONSchema::Boolean;
@@ -19,9 +21,13 @@ pub fn test_parser() {
 	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::True, JSONToken::False]);
 }
 
+#[traced_test]
 #[test]
 pub fn test_string_parser() {
-	let schema = JSONSchema::String { max_length: Some(10) };
+	let schema = JSONSchema::String {
+		max_length: Some(10),
+		r#enum: None,
+	};
 	let mut bias = JSONBiaser::new(&schema);
 	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::DoubleQuote]);
 	bias.advance(&JSONToken::DoubleQuote).unwrap();
@@ -30,6 +36,24 @@ pub fn test_string_parser() {
 	assert_eq!(bias.next_valid_tokens(), vec![]);
 }
 
+#[traced_test]
+#[test]
+pub fn test_string_enum_parser() {
+	let words = vec!["foo".to_string(), "bar".to_string(), "baz".to_string()];
+	let schema = JSONSchema::String {
+		max_length: Some(10),
+		r#enum: Some(words.clone()),
+	};
+	let mut bias = JSONBiaser::new(&schema);
+	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::DoubleQuote]);
+	bias.advance(&JSONToken::DoubleQuote).unwrap();
+	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::AnyOf(words)]);
+	bias.advance(&JSONToken::String(String::from("foo"))).unwrap();
+	bias.advance(&JSONToken::DoubleQuote).unwrap();
+	assert_eq!(bias.next_valid_tokens(), vec![]);
+}
+
+#[traced_test]
 #[test]
 pub fn test_array_parser() {
 	let schema = JSONSchema::Array {
@@ -61,6 +85,7 @@ pub fn test_array_parser() {
 	assert!(bias.can_end());
 }
 
+#[traced_test]
 #[test]
 pub fn test_json_biaser() {
 	let model = llm::load_dynamic(
@@ -72,13 +97,31 @@ pub fn test_json_biaser() {
 	)
 	.unwrap();
 
-	test_json_bias(JSONSchema::String { max_length: Some(20) }, model.as_ref());
-
 	test_json_bias(JSONSchema::Boolean, model.as_ref());
 
 	test_json_bias(JSONSchema::Null, model.as_ref());
 
 	test_json_bias(JSONSchema::Object, model.as_ref());
+
+	test_json_bias(
+		JSONSchema::String {
+			max_length: Some(20),
+			r#enum: Some(vec![
+				"The quick brown fox".to_string(),
+				"Jumped over the".to_string(),
+				"The quick".to_string(),
+			]),
+		},
+		model.as_ref(),
+	);
+
+	test_json_bias(
+		JSONSchema::String {
+			max_length: Some(20),
+			r#enum: None,
+		},
+		model.as_ref(),
+	);
 
 	test_json_bias(
 		JSONSchema::Number {
@@ -144,6 +187,7 @@ fn test_json_bias(schema: JSONSchema, model: &dyn Model) {
 			if next_valid_tokens.is_empty() {
 				break;
 			}
+			println!("next_valid_tokens={next_valid_tokens:?}");
 
 			let sampler = samplers::TopPTopK {
 				bias_tokens: TokenBias::new(next_valid_tokens),
