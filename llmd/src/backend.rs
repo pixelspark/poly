@@ -5,10 +5,10 @@ use std::{
 };
 
 use llm::{
-	samplers, InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, InferenceSessionConfig, InferenceStats, ModelParameters,
+	InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, InferenceSessionConfig, InferenceStats, ModelParameters,
 	OutputRequest, Prompt, TokenBias, TokenId, TokenUtf8Buffer,
 };
-use llm_bias::{json::JsonBiaser, Biaser, NullBiaser};
+use llm_bias::{json::JsonBiaser, sampler::TopPTopKBiased, Biaser, NullBiaser};
 
 use crate::{
 	api::{EmbeddingResponse, GenerateError, PromptRequest, SessionRequest},
@@ -214,7 +214,7 @@ impl BackendSession {
 				only_possible_token
 			} else {
 				// Sample a token using the model
-				let sampler = samplers::TopPTopK {
+				let sampler = TopPTopKBiased {
 					bias_tokens: TokenBias::new(biaser_bias),
 					temperature: self.task_config.temperature,
 					top_k: self.task_config.top_k,

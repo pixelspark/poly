@@ -12,7 +12,8 @@ serde_json = "1.0.96"
 thiserror = "1.0.40"
 tokio = { version = "1.28.1", features = ["full"] }
 tracing = "0.1.37"
+rand = "0.8.5"
+partial_sort = "0.2.0"
 
 [dev-dependencies]
 tracing-test = "0.2.4"
-rand = "0.8.5"

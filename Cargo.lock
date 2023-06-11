@@ -1137,6 +1137,7 @@ name = "llm-bias"
 version = "0.1.0"
 dependencies = [
  "llm",
+ "partial_sort",
  "rand",
  "serde",
  "serde_json",

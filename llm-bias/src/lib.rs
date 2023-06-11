@@ -1,6 +1,7 @@
 use llm::{TokenId, Vocabulary};
 
 pub mod json;
+pub mod sampler;
 
 pub const TOKEN_ALLOWED: f32 = 10000.0;
 pub const TOKEN_FORBIDDEN: f32 = -10000.0;
