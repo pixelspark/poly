@@ -21,7 +21,7 @@ pub fn test_parser() {
 
 #[test]
 pub fn test_string_parser() {
-	let schema = JSONSchema::String {};
+	let schema = JSONSchema::String { max_length: Some(10) };
 	let mut bias = JSONBiaser::new(&schema);
 	assert_eq!(bias.next_valid_tokens(), vec![JSONToken::DoubleQuote]);
 	bias.advance(&JSONToken::DoubleQuote).unwrap();
@@ -72,7 +72,7 @@ pub fn test_json_biaser() {
 	)
 	.unwrap();
 
-	test_json_bias(JSONSchema::String {}, model.as_ref());
+	test_json_bias(JSONSchema::String { max_length: Some(20) }, model.as_ref());
 
 	test_json_bias(JSONSchema::Boolean, model.as_ref());
 
@@ -168,13 +168,9 @@ fn test_json_bias(schema: JSONSchema, model: &dyn Model) {
 						result.push_str(&output);
 					}
 					println!(
-						"Token: {}, RESULT: {result} next valid tokens: {}",
+						"Token: {}, RESULT: {result} next valid tokens: {:?}",
 						String::from_utf8_lossy(&vocab.decode(vec![out_token], false)),
-						bias.next_valid_tokens()
-							.iter()
-							.map(|x| x.to_string().to_string())
-							.collect::<Vec<String>>()
-							.join(" "),
+						bias.next_valid_tokens(),
 					);
 				}
 				Err(e) => {

@@ -86,20 +86,18 @@ impl BackendSession {
 
 		// Check for private tokens in user prompt
 		let private_tokens = self.task_config.private_tokens.clone().unwrap_or(vec![]);
-		if !private_tokens.is_empty() {
-			let private_token_ids: Vec<u32> = private_tokens
-				.iter()
-				.map(|token_str| {
-					let toks = self.model.vocabulary().tokenize(token_str, false).unwrap();
-					if toks.len() != 1 {
-						panic!("invalid forbidden token configured: {token_str}");
-					}
-					toks[0].1
-				})
-				.collect();
-			if user_tokens.iter().any(|t| private_token_ids.contains(t)) {
-				return Err(GenerateError::IllegalToken);
-			}
+		let private_token_ids: Vec<u32> = private_tokens
+			.iter()
+			.map(|token_str| {
+				let toks = self.model.vocabulary().tokenize(token_str, false).unwrap();
+				if toks.len() != 1 {
+					panic!("invalid forbidden token configured: {token_str}");
+				}
+				toks[0].1
+			})
+			.collect();
+		if !private_token_ids.is_empty() && user_tokens.iter().any(|t| private_token_ids.contains(t)) {
+			return Err(GenerateError::IllegalToken);
 		}
 		tokens.append(&mut user_tokens);
 
@@ -181,7 +179,6 @@ impl BackendSession {
 
 		// Set up biaser
 		let mut biaser: Box<dyn Biaser> = if let Some(ref schema) = self.task_config.schema {
-			// TODO: reference to schema, no clone
 			Box::new(JSONBiaser::new(schema))
 		} else {
 			Box::new(NullBiaser {})
@@ -195,7 +192,10 @@ impl BackendSession {
 		let mut tokens_generated: usize = 0;
 
 		loop {
-			let biaser_bias = biaser.bias(vocabulary, eot_token);
+			let mut biaser_bias = biaser.bias(vocabulary, eot_token);
+
+			// Remove private tokens from biaser
+			biaser_bias.retain_mut(|t| !private_token_ids.contains(&t.0));
 
 			// If there is only one token positively biased, that will be the next token
 			let out_token_id = if biaser_bias.len() == 1 && biaser_bias[0].1 > 0.0 {
