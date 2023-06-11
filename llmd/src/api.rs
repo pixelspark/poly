@@ -1,13 +1,20 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use axum::{http::StatusCode, response::IntoResponse};
 use llm::{samplers::TopPTopK, InferenceError, InferenceParameters, TokenBias, TokenizationError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::stats::TaskStats;
+
 #[derive(Deserialize, Clone, Debug)]
 pub struct KeyQuery {
 	pub api_key: Option<String>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct StatsResponse {
+	pub tasks: HashMap<String, TaskStats>,
 }
 
 #[derive(Deserialize, Clone, Debug)]

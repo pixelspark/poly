@@ -1,6 +1,6 @@
 use std::{
 	collections::HashMap,
-	sync::Arc,
+	sync::{Arc, Mutex},
 	time::{Duration, Instant},
 };
 
@@ -13,13 +13,19 @@ use llm_bias::{json::JsonBiaser, Biaser, NullBiaser};
 use crate::{
 	api::{EmbeddingResponse, GenerateError, PromptRequest, SessionRequest},
 	config::{BiaserConfig, Config, TaskConfig, DEFAULT_THREADS_PER_SESSION},
+	stats::{InferenceStatsAdd, TaskStats},
 };
 
 use tracing::log::*;
 
+pub struct BackendStats {
+	pub task_stats: Mutex<HashMap<String, TaskStats>>,
+}
+
 pub struct Backend {
 	pub config: Config,
 	pub models: HashMap<String, Arc<Box<dyn llm::Model>>>,
+	pub stats: Arc<BackendStats>,
 }
 
 pub struct BackendSession {
@@ -28,19 +34,8 @@ pub struct BackendSession {
 	inference_parameters: InferenceParameters,
 	max_tokens: Option<usize>,
 	task_config: TaskConfig,
-}
-
-pub trait InferenceStatsAdd {
-	fn add(&mut self, stats: &InferenceStats);
-}
-
-impl InferenceStatsAdd for InferenceStats {
-	fn add(&mut self, stats: &InferenceStats) {
-		self.predict_duration += stats.predict_duration;
-		self.predict_tokens += stats.predict_tokens;
-		self.prompt_tokens += stats.prompt_tokens;
-		self.feed_prompt_duration += stats.feed_prompt_duration;
-	}
+	stats: Arc<BackendStats>,
+	task_name: String,
 }
 
 impl BackendSession {
@@ -50,15 +45,16 @@ impl BackendSession {
 		request: &PromptRequest,
 		callback: impl FnMut(InferenceResponse) -> Result<InferenceFeedback, GenerateError>,
 	) -> Result<InferenceStats, GenerateError> {
-		let res = self.complete_actual(request, callback)?;
-		let prompt_tokens_per_s = (res.prompt_tokens as f64) / res.feed_prompt_duration.as_secs_f64();
-		let predict_tokens_per_s = (res.predict_tokens as f64) / res.predict_duration.as_secs_f64();
+		let stats = self.complete_actual(request, callback)?;
+		let prompt_tokens_per_s = (stats.prompt_tokens as f64) / stats.feed_prompt_duration.as_secs_f64();
+		let predict_tokens_per_s = (stats.predict_tokens as f64) / stats.predict_duration.as_secs_f64();
 
 		tracing::info!(
 			"completion finished; {prompt_tokens_per_s:.3} t/s prompt, {predict_tokens_per_s:.3} t/s predict; stats: {:?}",
-			res
+			stats
 		);
-		Ok(res)
+		self.stats.add(&self.task_name, &stats, self.inference_parameters.n_threads);
+		Ok(stats)
 	}
 
 	fn complete_actual(
@@ -286,11 +282,33 @@ impl BackendSession {
 	}
 }
 
+impl BackendStats {
+	pub fn add(&self, task_name: &str, stats: &InferenceStats, n_threads: usize) {
+		let mut ts = self.task_stats.lock().unwrap();
+		if let Some(task_stats) = ts.get_mut(task_name) {
+			task_stats.add_cycle(stats, n_threads);
+		} else {
+			let mut task_stats = TaskStats::default();
+			task_stats.add_cycle(stats, n_threads);
+			ts.insert(task_name.to_string(), task_stats);
+		}
+	}
+}
+
+impl Default for BackendStats {
+	fn default() -> Self {
+		BackendStats {
+			task_stats: Mutex::new(HashMap::new()),
+		}
+	}
+}
+
 impl Backend {
 	pub fn from(config: Config) -> Backend {
 		let mut backend = Backend {
 			config,
 			models: HashMap::new(),
+			stats: Arc::new(BackendStats::default()),
 		};
 
 		// Load models
@@ -397,6 +415,8 @@ impl Backend {
 			inference_parameters,
 			max_tokens: Some(request.max_tokens),
 			task_config: task_config.clone(),
+			stats: self.stats.clone(),
+			task_name: task_name.to_string(),
 		})
 	}
 }

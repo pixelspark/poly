@@ -11,8 +11,8 @@ use clap::Parser;
 use futures_util::Stream;
 use llm::InferenceResponse;
 use llmd::api::{
-	EmbeddingResponse, GenerateError, GenerateResponse, KeyQuery, ModelsResponse, PromptRequest, SessionAndPromptRequest, SessionRequest, Status,
-	StatusResponse, TasksResponse,
+	EmbeddingResponse, GenerateError, GenerateResponse, KeyQuery, ModelsResponse, PromptRequest, SessionAndPromptRequest, SessionRequest,
+	StatsResponse, Status, StatusResponse, TasksResponse,
 };
 use llmd::backend::Backend;
 use llmd::config::{Args, Config};
@@ -90,7 +90,8 @@ async fn main() {
 						.route("/:task/completion", post(post_task_completion_handler))
 						.route("/:task/completion", get(get_task_completion_handler))
 						.layer(axum::middleware::from_fn_with_state(state.clone(), authorize)),
-				),
+				)
+				.route("/stats", get(stats_handler)),
 		)
 		.layer(cors_layer)
 		.layer(ConcurrencyLimitLayer::new(state.config.max_concurrent))
@@ -98,6 +99,11 @@ async fn main() {
 		.with_state(state);
 
 	axum::Server::bind(&bind_address).serve(app.into_make_service()).await.unwrap();
+}
+
+async fn stats_handler(State(state): State<Arc<Backend>>) -> impl IntoResponse {
+	let task_stats = state.stats.task_stats.lock().unwrap().clone();
+	Json(StatsResponse { tasks: task_stats })
 }
 
 async fn status_handler() -> impl IntoResponse {
