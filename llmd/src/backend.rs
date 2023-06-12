@@ -1,5 +1,8 @@
 use std::{
+	borrow::Cow,
 	collections::HashMap,
+	fs::File,
+	io::BufReader,
 	sync::{Arc, Mutex},
 	time::{Duration, Instant},
 };
@@ -174,8 +177,15 @@ impl BackendSession {
 		}
 
 		// Set up biaser
+		let schema: Option<Cow<JsonSchema>>;
 		let mut biaser: Box<dyn Biaser> = match self.task_config.biaser {
-			Some(BiaserConfig::Json(ref schema)) => Box::new(JsonBiaser::new(schema)),
+			Some(BiaserConfig::JsonSchema(ref schema)) => Box::new(JsonBiaser::new(schema)),
+			Some(BiaserConfig::JsonSchemaFile(ref path)) => {
+				let file = File::open(path).unwrap();
+				let rdr = BufReader::new(file);
+				schema = Some(Cow::Owned(serde_json::from_reader(rdr).expect("valid JSON schema in file")));
+				Box::new(JsonBiaser::new(schema.as_ref().unwrap()))
+			}
 			None => Box::new(NullBiaser {}),
 		};
 

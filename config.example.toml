@@ -51,5 +51,11 @@ private_tokens = ["<|im_start|>", "<|im_end|>"]
 # { type = "null" }
 # { type = "object" } (currently produces an empty object always)
 # { type = "string", max_length? = 12, enum? = ["foo", "bar", "baz"] }
-biaser = { json = { type = "boolean" } }
+biaser = { json_schema = { type = "boolean" } }
 temperature = 1
+
+[tasks.cars]
+model = "vicuna13b"
+
+# JSON schemas can also be loaded from a file
+biaser = { json_schema_file = "./data/cars.schema.json" }

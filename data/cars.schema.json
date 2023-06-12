@@ -1,0 +1,62 @@
+{
+  "type": "object",
+  "required": ["car"],
+  "properties": {
+    "car": {
+      "type": "object",
+      "required": ["make", "model", "year", "fuel_type", "colors", "features"],
+      "properties": {
+        "make": { "type": "string" },
+        "model": { "type": "string" },
+        "fuel_type": {
+          "type": "string",
+          "enum": ["benzine", "diesel", "electric", "lpg"]
+        },
+        "year": { "type": "number" },
+        "colors": { "type": "array", "items": { "type": "string" } },
+        "features": {
+          "type": "object",
+          "required": ["audio", "safety", "performance"],
+          "properties": {
+            "audio": {
+              "type": "object",
+              "required": ["brand", "speakers", "hasBluetooth"],
+              "properties": {
+                "brand": { "type": "string" },
+                "speakers": { "type": "number" },
+                "hasBluetooth": { "type": "boolean" }
+              }
+            },
+            "safety": {
+              "type": "object",
+              "required": ["airbags", "parkingSensors", "laneAssist"],
+              "properties": {
+                "airbags": { "type": "number" },
+                "parkingSensors": { "type": "boolean" },
+                "laneAssist": { "type": "boolean" }
+              }
+            },
+            "performance": {
+              "type": "object",
+              "required": ["engine", "horsepower", "topSpeed"],
+              "properties": {
+                "engine": { "type": "string" },
+                "horsepower": { "type": "number" },
+                "topSpeed": { "type": "number" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "owner": {
+      "type": "object",
+      "required": ["firstName", "lastName", "age"],
+      "properties": {
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "age": { "type": "number" }
+      }
+    }
+  }
+}
