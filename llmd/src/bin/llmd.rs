@@ -352,10 +352,10 @@ async fn task_completion_handler(
 async fn embedding_handler(
 	backend: Arc<Backend>,
 	endpoint_name: &str,
-	request: &SessionRequest,
+	_request: &SessionRequest,
 	prompt: &PromptRequest,
 ) -> Result<Json<EmbeddingResponse>, GenerateError> {
-	Ok(Json(backend.embedding(endpoint_name, request, prompt)?))
+	Ok(Json(backend.embedding(endpoint_name, prompt)?))
 }
 
 async fn authorize<T>(

@@ -5,7 +5,7 @@ use llm::{samplers::TopPTopK, InferenceError, InferenceParameters, TokenBias, To
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::stats::TaskStats;
+use crate::{config::TaskConfig, stats::TaskStats};
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct KeyQuery {
@@ -17,17 +17,9 @@ pub struct StatsResponse {
 	pub tasks: HashMap<String, TaskStats>,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug, Default)]
 #[serde(default)]
-pub struct SessionRequest {
-	pub max_tokens: usize,
-	pub batch_size: usize,
-	pub repeat_last_n: usize,
-	pub repeat_penalty: f32,
-	pub temperature: f32,
-	pub top_k: usize,
-	pub top_p: f32,
-}
+pub struct SessionRequest {}
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct PromptRequest {
@@ -43,33 +35,19 @@ pub struct SessionAndPromptRequest {
 	pub prompt: PromptRequest,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, Default)]
 pub struct EmbeddingResponse {
 	pub embedding: Vec<f32>,
 }
 
-impl Default for SessionRequest {
-	fn default() -> Self {
-		Self {
-			max_tokens: 128,
-			batch_size: 8,
-			repeat_last_n: 64,
-			repeat_penalty: 1.30,
-			temperature: 0.80,
-			top_k: 40,
-			top_p: 0.95,
-		}
-	}
-}
-
-impl From<SessionRequest> for InferenceParameters {
-	fn from(val: SessionRequest) -> Self {
+impl From<TaskConfig> for InferenceParameters {
+	fn from(val: TaskConfig) -> Self {
 		let sampler = TopPTopK {
 			top_k: val.top_k,
 			top_p: val.top_p,
 			repeat_penalty: val.repeat_penalty,
 			temperature: val.temperature,
-			repetition_penalty_last_n: val.repeat_last_n,
+			repetition_penalty_last_n: val.repetition_penalty_last_n,
 			bias_tokens: TokenBias::empty(),
 		};
 

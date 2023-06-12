@@ -8,14 +8,18 @@ use std::{
 };
 
 use llm::{
-	InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, InferenceSessionConfig, InferenceStats, ModelParameters,
-	OutputRequest, Prompt, TokenBias, TokenId, TokenUtf8Buffer,
+	samplers::TopPTopK, InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, InferenceSessionConfig, InferenceStats,
+	ModelParameters, OutputRequest, Prompt, TokenBias, TokenId, TokenUtf8Buffer,
 };
-use llm_bias::{json::JsonBiaser, sampler::TopPTopKBiased, Biaser, NullBiaser};
+use llm_bias::{
+	json::{JsonBiaser, JsonSchema},
+	sampler::TopPTopKBiased,
+	Biaser, NullBiaser,
+};
 
 use crate::{
 	api::{EmbeddingResponse, GenerateError, PromptRequest, SessionRequest},
-	config::{BiaserConfig, Config, TaskConfig, DEFAULT_THREADS_PER_SESSION},
+	config::{BiaserConfig, Config, TaskConfig},
 	stats::{InferenceStatsAdd, TaskStats},
 };
 
@@ -35,7 +39,6 @@ pub struct BackendSession {
 	model: Arc<Box<dyn llm::Model>>,
 	session: llm::InferenceSession,
 	inference_parameters: InferenceParameters,
-	max_tokens: Option<usize>,
 	task_config: TaskConfig,
 	stats: Arc<BackendStats>,
 	task_name: String,
@@ -133,7 +136,7 @@ impl BackendSession {
 				&InferenceRequest {
 					prompt: Prompt::Tokens(&[]),
 					parameters: &self.inference_parameters,
-					maximum_token_count: self.max_tokens,
+					maximum_token_count: self.task_config.max_tokens,
 					play_back_previous_tokens: false,
 				},
 				&mut OutputRequest::default(),
@@ -276,10 +279,12 @@ impl BackendSession {
 				}
 			}
 
-			// Stop once we have enough tokens
-			if let Some(max_tokens) = self.max_tokens {
-				if tokens_generated >= max_tokens {
-					break;
+			// Stop once we have enough tokens (and not in biased mode, because then the biaser decides when we stop)
+			if self.task_config.biaser.is_none() {
+				if let Some(max_tokens) = self.task_config.max_tokens {
+					if tokens_generated >= max_tokens {
+						break;
+					}
 				}
 			}
 		}
@@ -326,7 +331,7 @@ impl Backend {
 		for (endpoint_name, endpoint) in &backend.config.models {
 			let params = ModelParameters {
 				prefer_mmap: true,
-				context_size: endpoint.context_size.unwrap_or(512),
+				context_size: endpoint.context_size,
 				lora_adapters: None,
 			};
 
@@ -357,8 +362,8 @@ impl Backend {
 		backend
 	}
 
-	pub fn embedding(&self, model_name: &str, request: &SessionRequest, prompt: &PromptRequest) -> Result<EmbeddingResponse, GenerateError> {
-		info!("Embedding request {} {:?}", model_name, request);
+	pub fn embedding(&self, model_name: &str, prompt: &PromptRequest) -> Result<EmbeddingResponse, GenerateError> {
+		info!("Embedding request {} ", model_name);
 
 		if !self.models.contains_key(model_name) {
 			return Err(GenerateError::ModelNotFound(model_name.to_string()));
@@ -367,8 +372,11 @@ impl Backend {
 		let model = self.models.get(model_name).unwrap();
 		let inference_config = InferenceSessionConfig::default();
 		let mut session = model.start_session(inference_config);
-		let mut inference_parameters: InferenceParameters = request.clone().into();
-		inference_parameters.n_threads = self.config.models[model_name].threads_per_session.unwrap_or(DEFAULT_THREADS_PER_SESSION);
+		let inference_parameters: InferenceParameters = InferenceParameters {
+			n_threads: self.config.models[model_name].threads_per_session,
+			n_batch: 8,
+			sampler: Arc::new(TopPTopK::default()),
+		};
 
 		let mut output_request = OutputRequest {
 			embeddings: Some(Vec::new()),
@@ -389,7 +397,7 @@ impl Backend {
 		})
 	}
 
-	pub fn start(&self, task_name: &str, request: &SessionRequest) -> Result<BackendSession, GenerateError> {
+	pub fn start(&self, task_name: &str, _request: &SessionRequest) -> Result<BackendSession, GenerateError> {
 		info!("Start session {task_name}");
 
 		if !self.config.tasks.contains_key(task_name) {
@@ -401,10 +409,8 @@ impl Backend {
 		let inference_config = InferenceSessionConfig::default();
 		let mut session = model.start_session(inference_config);
 
-		let mut inference_parameters: InferenceParameters = request.clone().into();
-		inference_parameters.n_threads = self.config.models[&task_config.model]
-			.threads_per_session
-			.unwrap_or(DEFAULT_THREADS_PER_SESSION);
+		let mut inference_parameters: InferenceParameters = task_config.clone().into();
+		inference_parameters.n_threads = self.config.models[&task_config.model].threads_per_session;
 
 		if let Some(ref prelude_prompt) = task_config.prelude {
 			tracing::debug!("feeding prelude prompt: '{prelude_prompt}'");
@@ -424,7 +430,6 @@ impl Backend {
 			model: model.clone(),
 			session,
 			inference_parameters,
-			max_tokens: Some(request.max_tokens),
 			task_config: task_config.clone(),
 			stats: self.stats.clone(),
 			task_name: task_name.to_string(),

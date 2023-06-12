@@ -20,8 +20,6 @@ where
 	}
 }
 
-pub const DEFAULT_THREADS_PER_SESSION: usize = 8;
-
 #[derive(Deserialize, Debug, Clone)]
 pub struct ModelConfig {
 	/// The model architecture type
@@ -32,16 +30,27 @@ pub struct ModelConfig {
 	pub model_path: PathBuf,
 
 	/// Threads per session
-	pub threads_per_session: Option<usize>,
+	#[serde(default = "default_threads_per_session")]
+	pub threads_per_session: usize,
 
 	/// Context size
-	pub context_size: Option<usize>,
+	#[serde(default = "default_context_size")]
+	pub context_size: usize,
+}
+
+const fn default_threads_per_session() -> usize {
+	8
+}
+
+const fn default_context_size() -> usize {
+	512
 }
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum BiaserConfig {
-	Json(JsonSchema),
+	JsonSchema(JsonSchema),
+	JsonSchemaFile(PathBuf),
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -59,6 +68,9 @@ pub struct TaskConfig {
 
 	/// Tokens that users should not be able to input as they are used for signalling
 	pub private_tokens: Option<Vec<String>>,
+
+	/// Maximum number of tokens to be generated (when biaser is enabled: applies only to unbiased phase when bias_prompt is used)
+	pub max_tokens: Option<usize>,
 
 	/// Biaser: the biaser to apply to the output (if any)
 	pub biaser: Option<BiaserConfig>,
@@ -88,6 +100,21 @@ pub struct TaskConfig {
 	/// The number of tokens to consider for the repetition penalty.
 	#[serde(default = "default_repetition_penalty_last_n")]
 	pub repetition_penalty_last_n: usize,
+
+	/// Controls batch/chunk size for prompt ingestion in [InferenceSession::feed_prompt].
+	///
+	/// This is the number of tokens that will be ingested at once. This is useful for
+	/// trying to speed up the ingestion of prompts, as it allows for parallelization.
+	/// However, you will be fundamentally limited by your machine's ability to evaluate
+	/// the transformer model, so increasing the batch size will not always help.
+	///
+	/// A reasonable default value is 8.
+	#[serde(default = "default_batch_size")]
+	pub batch_size: usize,
+}
+
+const fn default_batch_size() -> usize {
+	8
 }
 
 const fn default_top_k() -> usize {
