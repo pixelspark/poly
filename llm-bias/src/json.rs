@@ -539,7 +539,6 @@ impl<'schema> JsonParserState<'schema> {
 			}
 			JsonParserState::InArray(array_state) => {
 				let mut array_state: JsonParserArrayState = array_state.clone();
-				let next_valid_item_tokens = array_state.value_state.next_valid_tokens();
 
 				match input {
 					JsonToken::Comma if array_state.value_state.can_end() => {
@@ -555,11 +554,13 @@ impl<'schema> JsonParserState<'schema> {
 						}
 						JsonParserState::End(Value::Array(array_state.items))
 					}
-					t if next_valid_item_tokens.contains(t) => {
-						array_state.value_state.advance(input)?;
-						JsonParserState::InArray(array_state)
+					t => {
+						if array_state.value_state.advance(input).is_ok() {
+							JsonParserState::InArray(array_state)
+						} else {
+							return Err(BiaserError::InvalidToken(t.clone()));
+						}
 					}
-					t => return Err(BiaserError::InvalidToken(t.clone())),
 				}
 			}
 
