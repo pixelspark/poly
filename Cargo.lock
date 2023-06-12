@@ -1144,7 +1144,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
- "tracing-test",
+ "tracing-subscriber",
 ]
 
 [[package]]

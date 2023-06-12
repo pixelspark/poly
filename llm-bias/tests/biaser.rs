@@ -13,19 +13,18 @@ use llm_bias::{
 };
 use rand::SeedableRng;
 use serde_json::Value;
-use tracing_test::traced_test;
 
-#[traced_test]
 #[test]
 pub fn test_parser() {
+	tracing_subscriber::fmt::init();
 	let schema = JsonSchema::Boolean;
 	let bias = JsonBiaser::new(&schema);
 	assert_eq!(bias.next_valid_tokens(), vec![JsonToken::True, JsonToken::False]);
 }
 
-#[traced_test]
 #[test]
 pub fn test_string_parser() {
+	tracing_subscriber::fmt::init();
 	let schema = JsonSchema::String {
 		max_length: Some(10),
 		r#enum: None,
@@ -38,9 +37,9 @@ pub fn test_string_parser() {
 	assert_eq!(bias.next_valid_tokens(), vec![]);
 }
 
-#[traced_test]
 #[test]
 pub fn test_string_enum_parser() {
+	tracing_subscriber::fmt::init();
 	let words = vec!["foo".to_string(), "bar".to_string(), "baz".to_string()];
 	let schema = JsonSchema::String {
 		max_length: Some(10),
@@ -55,9 +54,9 @@ pub fn test_string_enum_parser() {
 	assert_eq!(bias.next_valid_tokens(), vec![]);
 }
 
-#[traced_test]
 #[test]
 pub fn test_empty_object_parser() {
+	tracing_subscriber::fmt::init();
 	let schema = JsonSchema::Object {
 		required: vec![],
 		properties: HashMap::new(),
@@ -73,9 +72,9 @@ pub fn test_empty_object_parser() {
 	assert_eq!(biaser.next_valid_tokens(), vec![]);
 }
 
-#[traced_test]
 #[test]
 pub fn test_object_parser() {
+	tracing_subscriber::fmt::init();
 	let mut fields = HashMap::new();
 	fields.insert(
 		"first_name".to_string(),
@@ -137,9 +136,9 @@ pub fn test_object_parser() {
 	assert!(biaser.can_end());
 }
 
-#[traced_test]
 #[test]
 pub fn test_array_parser() {
+	tracing_subscriber::fmt::init();
 	let schema = JsonSchema::Array {
 		items: Box::new(JsonSchema::Boolean),
 		min_items: Some(2),
@@ -171,9 +170,9 @@ pub fn test_array_parser() {
 
 static MODEL_PATH: &str = "../data/pythia-160m-q4_0.bin";
 
-#[traced_test]
 #[test]
 pub fn test_json_biaser_objects() {
+	tracing_subscriber::fmt::init();
 	let model = llm::load_dynamic(
 		ModelArchitecture::GptNeoX,
 		Path::new(MODEL_PATH),
@@ -216,9 +215,9 @@ pub fn test_json_biaser_objects() {
 	);
 }
 
-#[traced_test]
 #[test]
 pub fn test_json_biaser() {
+	tracing_subscriber::fmt::init();
 	let model = llm::load_dynamic(
 		ModelArchitecture::GptNeoX,
 		Path::new(MODEL_PATH),

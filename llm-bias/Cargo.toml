@@ -16,4 +16,4 @@ rand = "0.8.5"
 partial_sort = "0.2.0"
 
 [dev-dependencies]
-tracing-test = "0.2.4"
+tracing-subscriber = "0.3.17"
