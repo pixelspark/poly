@@ -20,6 +20,7 @@ use llm_bias::{
 use crate::{
 	api::{EmbeddingResponse, GenerateError, PromptRequest, SessionRequest},
 	config::{BiaserConfig, Config, TaskConfig},
+	sequence::{Sequence, SequenceSet},
 	stats::{InferenceStatsAdd, TaskStats},
 };
 
@@ -198,6 +199,19 @@ impl BackendSession {
 		let eot_token = self.model.eot_token_id();
 		let mut inference_params = self.inference_parameters.clone();
 		let mut tokens_generated: usize = 0;
+		let mut stop_sequences = if self.task_config.stop_sequences.is_empty() {
+			None
+		} else if self.task_config.biaser.is_some() {
+			tracing::warn!(
+				"a biaser is configured for task {}, therefore the stop sequences are ignored",
+				self.task_name
+			);
+			None
+		} else {
+			Some(SequenceSet::new(
+				self.task_config.stop_sequences.iter().map(|x| Sequence::new(x.clone())).collect(),
+			))
+		};
 
 		loop {
 			let mut biaser_bias = biaser.bias(vocabulary, eot_token);
@@ -261,6 +275,8 @@ impl BackendSession {
 			if tracing::enabled!(tracing::Level::DEBUG) {
 				tokens.push(out_token_id);
 			}
+
+			// Check for end of text
 			if out_token_id == eot_token {
 				break;
 			}
@@ -269,7 +285,17 @@ impl BackendSession {
 			biaser.advance(vocabulary, out_token_id);
 
 			// Add token to result
+			tracing::trace!("token: {out_token_id}");
 			if let Some(output) = result_buffer.push(&vocabulary.token(out_token_id as usize)) {
+				tracing::trace!("text: {output}");
+
+				if let Some(ref mut stop_sequences) = stop_sequences {
+					if stop_sequences.advance(&output) {
+						tracing::debug!("stop because stop sequence encountered");
+						break;
+					}
+				}
+
 				if !private_tokens.contains(&output) {
 					// Swallow private tokens
 					match callback(InferenceResponse::InferredToken(output))? {
@@ -292,7 +318,7 @@ impl BackendSession {
 		if tracing::enabled!(tracing::Level::DEBUG) {
 			let decoded = self.model.vocabulary().decode(tokens, false);
 			let txt = String::from_utf8_lossy(&decoded);
-			tracing::info!("full transcript (excluding prelude): {txt}");
+			tracing::debug!("full transcript (excluding prelude): {txt}");
 		}
 		Ok(completion_stats)
 	}

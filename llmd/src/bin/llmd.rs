@@ -245,7 +245,6 @@ async fn sse_task_handler(
 			.complete(&prompt, |r| -> Result<_, GenerateError> {
 				match r {
 					llm::InferenceResponse::InferredToken(t) => {
-						trace!("{t}");
 						let tx = tx.clone();
 
 						// Do not continue when client has disconnected

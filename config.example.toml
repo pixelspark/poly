@@ -30,6 +30,7 @@ prelude = "" # Prompt that is fed once per session to the model
 prefix = "<|im_start|>user\n" # Prompt that is fed before each user input (may be multiple in a chat)
 postfix = "<|im_end|><|im_start|>assistant\n" # answer<|im_end|> # Prompt that is appended to each user input
 private_tokens = ["<|im_start|>", "<|im_end|>"] # Tokens that should never be returned to the user nor accepted in input
+stop_sequences = ["<|im_end|>", " stop"] # Text sequences that cause generation to stop (in addition to the end of text token)
 
 [tasks.true_or_false]
 model = "mpt_chat"

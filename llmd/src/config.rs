@@ -111,6 +111,14 @@ pub struct TaskConfig {
 	/// A reasonable default value is 8.
 	#[serde(default = "default_batch_size")]
 	pub batch_size: usize,
+
+	/// Sequences that when they occur end generation (just like end-of-text token)
+	#[serde(default = "default_stop_sequences")]
+	pub stop_sequences: Vec<String>,
+}
+
+const fn default_stop_sequences() -> Vec<String> {
+	vec![]
 }
 
 const fn default_batch_size() -> usize {
