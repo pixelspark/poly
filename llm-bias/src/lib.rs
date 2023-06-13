@@ -3,9 +3,13 @@ use llm::{TokenId, Vocabulary};
 pub mod json;
 pub mod sampler;
 
+/// Logit value to indicate a token is allowed to be present in the result
 pub const TOKEN_ALLOWED: f32 = 10000.0;
+
+/// Logit value to indicate a token is forbidden to be present in the result
 pub const TOKEN_FORBIDDEN: f32 = -10000.0;
 
+/// An object that holds state for producting biases during inference
 pub trait Biaser {
 	/// Return the current set of token biases
 	fn bias(&self, vocabulary: &Vocabulary, eot_token: TokenId) -> Vec<(TokenId, f32)>;
@@ -15,6 +19,7 @@ pub trait Biaser {
 	fn advance(&mut self, vocabulary: &Vocabulary, token: TokenId);
 }
 
+/// A biaser that does not bias in any way
 pub struct NullBiaser {}
 
 impl Biaser for NullBiaser {
