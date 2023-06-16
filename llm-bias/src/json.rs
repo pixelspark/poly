@@ -237,10 +237,19 @@ impl<'schema> Biaser for JsonBiaser<'schema> {
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct JsonBiaser<'schema> {
 	schema: &'schema JsonSchema,
 	state: JsonParserState<'schema>,
+}
+
+impl<'schema> Clone for JsonBiaser<'schema> {
+	fn clone(&self) -> Self {
+		Self {
+			schema: self.schema,
+			state: JsonParserState::Start,
+		}
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
