@@ -10,6 +10,9 @@ allowed_keys = [
 	"foo"
 ]
 
+# To allow usage without any key
+# public = true
+
 [models.pythia160m]
 model_path  = "./data/pythia-160m-q4_0.bin"
 architecture = "gptneox"

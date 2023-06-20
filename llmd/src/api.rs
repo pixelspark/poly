@@ -7,6 +7,13 @@ use thiserror::Error;
 
 use crate::{config::TaskConfig, stats::TaskStats};
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct JwtClaims {
+	pub exp: Option<usize>,         // Expiry time
+	pub sub: Option<String>,        // User identifier (currently only used for logging)
+	pub tasks: Option<Vec<String>>, // Optional list of tasks this token is allowed to use
+}
+
 #[derive(Deserialize, Clone, Debug)]
 pub struct KeyQuery {
 	pub api_key: Option<String>,

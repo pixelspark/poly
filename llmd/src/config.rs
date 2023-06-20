@@ -1,4 +1,5 @@
 use clap::Parser;
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey};
 use llm::ModelArchitecture;
 use llm_bias::json::JsonSchema;
 use serde::{Deserialize, Deserializer};
@@ -146,6 +147,12 @@ const fn default_repetition_penalty_last_n() -> usize {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum JwtPrivateKey {
+	Symmetric(String),
+}
+
+#[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Config {
 	/// Address and port to bind the server to ("0.0.0.0:1234")
@@ -163,8 +170,14 @@ pub struct Config {
 	/// The maximum number of concurrent requests serviced
 	pub max_concurrent: usize,
 
-	/// Allowed API keys. When empty, all keys will be allowed.
+	/// Whether access is allowed without keys
+	pub public: bool,
+
+	/// Allowed static API keys
 	pub allowed_keys: Vec<String>,
+
+	/// Key for JWT signed keys
+	pub jwt_private_key: Option<JwtPrivateKey>,
 }
 
 impl Default for Config {
@@ -176,6 +189,8 @@ impl Default for Config {
 			allowed_origins: None,
 			max_concurrent: 8,
 			allowed_keys: vec![],
+			public: false,
+			jwt_private_key: None,
 		}
 	}
 }
@@ -186,4 +201,24 @@ pub struct Args {
 	/// Where to load the config file from
 	#[arg(long, short = 'm', default_value = "config.toml")]
 	pub config_path: PathBuf,
+}
+
+impl JwtPrivateKey {
+	pub fn algorithm(&self) -> Algorithm {
+		match self {
+			Self::Symmetric(_) => Algorithm::HS256,
+		}
+	}
+
+	pub fn decoding_key(&self) -> DecodingKey {
+		match self {
+			JwtPrivateKey::Symmetric(s) => DecodingKey::from_secret(s.as_bytes()),
+		}
+	}
+
+	pub fn encoding_key(&self) -> EncodingKey {
+		match self {
+			JwtPrivateKey::Symmetric(s) => EncodingKey::from_secret(s.as_bytes()),
+		}
+	}
 }

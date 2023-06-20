@@ -439,17 +439,19 @@ impl Backend {
 		inference_parameters.n_threads = self.config.models[&task_config.model].threads_per_session;
 
 		if let Some(ref prelude_prompt) = task_config.prelude {
-			tracing::debug!("feeding prelude prompt: '{prelude_prompt}'");
-			session.feed_prompt(
-				model.as_ref().as_ref(),
-				&inference_parameters,
-				Prompt::Text(&prelude_prompt.clone()),
-				&mut OutputRequest::default(),
-				|r| -> Result<InferenceFeedback, GenerateError> {
-					tracing::trace!("Feed prompt: received {r:?}");
-					Ok(InferenceFeedback::Continue)
-				},
-			)?;
+			if !prelude_prompt.is_empty() {
+				tracing::debug!("feeding prelude prompt: '{prelude_prompt}'");
+				session.feed_prompt(
+					model.as_ref().as_ref(),
+					&inference_parameters,
+					Prompt::Text(&prelude_prompt.clone()),
+					&mut OutputRequest::default(),
+					|r| -> Result<InferenceFeedback, GenerateError> {
+						tracing::trace!("Feed prompt: received {r:?}");
+						Ok(InferenceFeedback::Continue)
+					},
+				)?;
+			}
 		}
 
 		Ok(BackendSession {

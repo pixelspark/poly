@@ -52,6 +52,25 @@ empty text frame.
 
 ### Securing the API
 
-To limit access to specific users, add a set of allowed API keys to the config file (`allowed_keys`). Then supply the key
-on each request, either using an `Authorization: Bearer <key>` header, or using a `?api_key=<key>` query parameter. When
-both are supplied the header key takes precedence.
+Unless `public` is set to `true` in config, access is only granted when a valid API key is provided. Depending on configuration
+this can be a pre-shared static API key and/or a JWT token.
+
+API keys need to be supplied either using an `Authorization: Bearer <key>` header, or using a `?api_key=<key>` query parameter.
+When both are supplied the header key takes precedence.
+
+#### Static pre-shared keys
+
+To use static pre-shared API keys, add the allowed API keys to the config file (`allowed_keys`).
+
+#### JWT tokens
+
+To use JWT tokens, first configure a shared secret key in config. Currently only a symmetric key is supported:
+
+```toml
+jwt_private_key = { symmetric = "..." }
+```
+
+Generated tokens should use the `HS256` algorithm and have an expiry time set (`exp`). If an `nbf` (not valid before) time
+is present, it will be validated.
+
+To generate a token for testing, use `cargo run --bin token` (this token by default expires in an hour).

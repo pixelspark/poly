@@ -1,8 +1,7 @@
 use async_stream::stream;
 use axum::extract::{ws::Message, ws::WebSocket, ws::WebSocketUpgrade, Path, Query, State};
-use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
-use axum::http::{HeaderValue, Method, Request, StatusCode};
-use axum::middleware::Next;
+use axum::http::header::CONTENT_TYPE;
+use axum::http::{HeaderValue, Method};
 use axum::response::sse::Event;
 use axum::response::{IntoResponse, Sse};
 use axum::routing::{get, post};
@@ -11,11 +10,12 @@ use clap::Parser;
 use futures_util::Stream;
 use llm::InferenceResponse;
 use llmd::api::{
-	EmbeddingResponse, GenerateError, GenerateResponse, KeyQuery, ModelsResponse, PromptRequest, SessionAndPromptRequest, SessionRequest,
+	EmbeddingResponse, GenerateError, GenerateResponse, JwtClaims, ModelsResponse, PromptRequest, SessionAndPromptRequest, SessionRequest,
 	StatsResponse, Status, StatusResponse, TasksResponse,
 };
 use llmd::backend::Backend;
 use llmd::config::{Args, Config};
+use llmd::middleware::{authenticate, authorize};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -28,11 +28,6 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, info, trace};
-
-#[derive(Clone)]
-struct CurrentUser {
-	key: Option<String>,
-}
 
 #[tokio::main]
 async fn main() {
@@ -78,18 +73,23 @@ async fn main() {
 						.route("/", get(models_handler))
 						.route("/:model/embedding", post(post_model_embedding_handler))
 						.route("/:model/embedding", get(get_model_embedding_handler))
-						.layer(axum::middleware::from_fn_with_state(state.clone(), authorize)),
+						.layer(axum::middleware::from_fn_with_state(state.clone(), authenticate)),
 				)
 				.nest(
 					"/task",
 					Router::new()
 						.route("/", get(tasks_handler))
-						.route("/:task/chat", get(ws_task_handler))
-						.route("/:task/status", get(status_with_user_handler))
-						.route("/:task/live", get(sse_task_handler))
-						.route("/:task/completion", post(post_task_completion_handler))
-						.route("/:task/completion", get(get_task_completion_handler))
-						.layer(axum::middleware::from_fn_with_state(state.clone(), authorize)),
+						.nest(
+							"/:task",
+							Router::new()
+								.route("/chat", get(ws_task_handler))
+								.route("/status", get(status_with_user_handler))
+								.route("/live", get(sse_task_handler))
+								.route("/completion", post(post_task_completion_handler))
+								.route("/completion", get(get_task_completion_handler))
+								.layer(axum::middleware::from_fn(authorize)),
+						)
+						.layer(axum::middleware::from_fn_with_state(state.clone(), authenticate)),
 				)
 				.route("/stats", get(stats_handler)),
 		)
@@ -110,8 +110,8 @@ async fn status_handler() -> impl IntoResponse {
 	Json(StatusResponse { status: Status::Ok })
 }
 
-async fn status_with_user_handler(Extension(current_user): Extension<CurrentUser>) -> impl IntoResponse {
-	tracing::info!("task request from user {:?}", current_user.key);
+async fn status_with_user_handler(Extension(current_user): Extension<JwtClaims>) -> impl IntoResponse {
+	tracing::info!("task request from user {:?}", current_user.sub);
 	Json(StatusResponse { status: Status::Ok })
 }
 
@@ -355,42 +355,4 @@ async fn embedding_handler(
 	prompt: &PromptRequest,
 ) -> Result<Json<EmbeddingResponse>, GenerateError> {
 	Ok(Json(backend.embedding(endpoint_name, prompt)?))
-}
-
-async fn authorize<T>(
-	State(state): State<Arc<Backend>>,
-	Query(key): Query<KeyQuery>,
-	mut req: Request<T>,
-	next: Next<T>,
-) -> Result<impl IntoResponse, StatusCode> {
-	if !state.config.allowed_keys.is_empty() {
-		let auth_header = req
-			.headers()
-			.get(AUTHORIZATION)
-			.and_then(|header| header.to_str().ok())
-			.map(|s| s.to_string());
-
-		let auth_header = if let Some(auth_header) = auth_header {
-			auth_header
-				.strip_prefix("Bearer ")
-				.ok_or(StatusCode::UNAUTHORIZED)
-				.map(|x| x.to_string())?
-		} else {
-			match key.api_key {
-				Some(k) => k,
-				None => return Err(StatusCode::UNAUTHORIZED),
-			}
-		};
-
-		// Check if key is allowed
-		if !state.config.allowed_keys.contains(&auth_header) {
-			return Err(StatusCode::UNAUTHORIZED);
-		}
-
-		req.extensions_mut().insert(CurrentUser { key: Some(auth_header) });
-	} else {
-		req.extensions_mut().insert(CurrentUser { key: None });
-	}
-
-	Ok(next.run(req).await)
 }
