@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Once};
 #[cfg(test)]
 use std::{path::Path, sync::Arc};
 
@@ -14,9 +14,17 @@ use llm_bias::{
 use rand::SeedableRng;
 use serde_json::Value;
 
+static INIT: Once = Once::new();
+
+pub fn setup() {
+	INIT.call_once(|| {
+		tracing_subscriber::fmt::init();
+	});
+}
+
 #[test]
 pub fn test_parser() {
-	tracing_subscriber::fmt::init();
+	setup();
 	let schema = JsonSchema::Boolean;
 	let bias = JsonBiaser::new(&schema);
 	assert_eq!(bias.next_valid_tokens(), vec![JsonToken::True, JsonToken::False]);
@@ -24,7 +32,6 @@ pub fn test_parser() {
 
 #[test]
 pub fn test_string_parser() {
-	tracing_subscriber::fmt::init();
 	let schema = JsonSchema::String {
 		max_length: Some(10),
 		r#enum: None,
@@ -39,7 +46,7 @@ pub fn test_string_parser() {
 
 #[test]
 pub fn test_string_enum_parser() {
-	tracing_subscriber::fmt::init();
+	setup();
 	let words = vec!["foo".to_string(), "bar".to_string(), "baz".to_string()];
 	let schema = JsonSchema::String {
 		max_length: Some(10),
@@ -56,7 +63,7 @@ pub fn test_string_enum_parser() {
 
 #[test]
 pub fn test_empty_object_parser() {
-	tracing_subscriber::fmt::init();
+	setup();
 	let schema = JsonSchema::Object {
 		required: vec![],
 		properties: HashMap::new(),
@@ -129,7 +136,7 @@ pub fn test_nested_object_parser() {
 
 #[test]
 pub fn test_object_parser() {
-	tracing_subscriber::fmt::init();
+	setup();
 	let mut fields = HashMap::new();
 	fields.insert(
 		"first_name".to_string(),
@@ -193,7 +200,7 @@ pub fn test_object_parser() {
 
 #[test]
 pub fn test_array_parser() {
-	tracing_subscriber::fmt::init();
+	setup();
 	let schema = JsonSchema::Array {
 		items: Box::new(JsonSchema::Boolean),
 		min_items: Some(2),
@@ -227,7 +234,7 @@ static MODEL_PATH: &str = "../data/pythia-160m-q4_0.bin";
 
 #[test]
 pub fn test_json_biaser_objects() {
-	tracing_subscriber::fmt::init();
+	setup();
 	let model = llm::load_dynamic(
 		ModelArchitecture::GptNeoX,
 		Path::new(MODEL_PATH),
@@ -272,7 +279,7 @@ pub fn test_json_biaser_objects() {
 
 #[test]
 pub fn test_json_biaser() {
-	tracing_subscriber::fmt::init();
+	setup();
 	let model = llm::load_dynamic(
 		ModelArchitecture::GptNeoX,
 		Path::new(MODEL_PATH),
@@ -345,6 +352,7 @@ pub fn test_json_biaser() {
 }
 
 fn test_json_bias(schema: JsonSchema, model: &dyn Model) {
+	setup();
 	for seed in [1340, 1338, 1339] {
 		let mut rng = rand::rngs::StdRng::seed_from_u64(seed); // Deterministic for tests
 
