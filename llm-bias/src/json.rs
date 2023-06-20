@@ -376,36 +376,37 @@ impl<'schema> JsonParserObjectState<'schema> {
 			panic!("parsing a JSON object with some other schema than an object schema");
 		};
 
-		self.part_state = match (&self.part_state, input) {
+		// Replace self with a temporary value so we can work with our owned copy
+		let old_state = std::mem::replace(&mut self.part_state, JsonParserObjectPartState::Finished);
+
+		self.part_state = match (old_state, input) {
 			(JsonParserObjectPartState::BeforeKey, JsonToken::CurlyClose) => JsonParserObjectPartState::Finished,
 			(JsonParserObjectPartState::BeforeKey, JsonToken::DoubleQuote) => JsonParserObjectPartState::InKey(String::from("")),
-			(JsonParserObjectPartState::InKey(k), JsonToken::DoubleQuote) => JsonParserObjectPartState::AfterKey(k.clone()),
+			(JsonParserObjectPartState::InKey(k), JsonToken::DoubleQuote) => JsonParserObjectPartState::AfterKey(k),
 			// TODO: accept other tokens (e.g. comma?) as next token
 			(JsonParserObjectPartState::InKey(k), JsonToken::String(s)) => JsonParserObjectPartState::InKey(format!("{k}{s}")),
-			(JsonParserObjectPartState::AfterKey(k), JsonToken::Colon) => {
-				let Some(value_schema) = properties.get(k) else {
+			(JsonParserObjectPartState::AfterKey(key), JsonToken::Colon) => {
+				let Some(value_schema) = properties.get(&key) else {
 					panic!("invalid key");
 				};
 				JsonParserObjectPartState::InValue {
-					key: k.clone(),
+					key,
 					value: Box::new(JsonBiaser::new(value_schema)),
 				}
 			}
 			(JsonParserObjectPartState::InValue { key, value }, JsonToken::Comma) if value.can_end() => {
-				self.so_far.insert(key.clone(), value.state.value().unwrap());
+				self.so_far.insert(key, value.state.value().unwrap());
 				JsonParserObjectPartState::BeforeKey
 			}
 			(JsonParserObjectPartState::InValue { key, value }, JsonToken::CurlyClose)
 				if value.can_end() && self.remaining_required_keys().len() == 1 =>
 			{
-				self.so_far.insert(key.clone(), value.state.value().unwrap());
+				self.so_far.insert(key, value.state.value().unwrap());
 				JsonParserObjectPartState::Finished
 			}
-			(JsonParserObjectPartState::InValue { key, value }, t) => {
-				// TODO remove clone
-				let mut value = value.clone();
+			(JsonParserObjectPartState::InValue { key, mut value }, t) => {
 				value.advance(t)?;
-				JsonParserObjectPartState::InValue { key: key.clone(), value }
+				JsonParserObjectPartState::InValue { key, value }
 			}
 
 			_ => return Err(BiaserError::InvalidToken(input.clone())),
@@ -499,7 +500,9 @@ impl<'schema> JsonParserState<'schema> {
 	}
 
 	pub fn advance(&mut self, input: &JsonToken, item_schema: Option<&'schema JsonSchema>) -> Result<(), BiaserError> {
-		*self = match self {
+		// Replace self with a temporary value so we can work with our owned copy
+		let old_self = std::mem::replace(self, JsonParserState::Start);
+		*self = match old_self {
 			JsonParserState::Start => match input {
 				JsonToken::True => JsonParserState::End(json! { true }),
 				JsonToken::False => JsonParserState::End(json! { false }),
@@ -541,37 +544,32 @@ impl<'schema> JsonParserState<'schema> {
 				JsonToken::Decimal => JsonParserState::InInteger(format!("{num_string}.")),
 				_ => return Err(BiaserError::InvalidToken(input.clone())),
 			},
-			JsonParserState::InObject(object_state) => {
-				let mut object_state = object_state.clone();
+			JsonParserState::InObject(mut object_state) => {
 				object_state.advance(input)?;
 				JsonParserState::InObject(object_state)
 			}
-			JsonParserState::InArray(array_state) => {
-				let mut array_state: JsonParserArrayState = array_state.clone();
-
-				match input {
-					JsonToken::Comma if array_state.value_state.can_end() => {
-						if let Some(v) = array_state.value_state.state.value() {
-							array_state.items.push(v);
-						}
-						array_state.value_state.state = JsonParserState::Start;
+			JsonParserState::InArray(mut array_state) => match input {
+				JsonToken::Comma if array_state.value_state.can_end() => {
+					if let Some(v) = array_state.value_state.state.value() {
+						array_state.items.push(v);
+					}
+					array_state.value_state.state = JsonParserState::Start;
+					JsonParserState::InArray(array_state)
+				}
+				JsonToken::BracketClose if array_state.value_state.can_end() => {
+					if let Some(v) = array_state.value_state.state.value() {
+						array_state.items.push(v);
+					}
+					JsonParserState::End(Value::Array(array_state.items))
+				}
+				t => {
+					if array_state.value_state.advance(input).is_ok() {
 						JsonParserState::InArray(array_state)
-					}
-					JsonToken::BracketClose if array_state.value_state.can_end() => {
-						if let Some(v) = array_state.value_state.state.value() {
-							array_state.items.push(v);
-						}
-						JsonParserState::End(Value::Array(array_state.items))
-					}
-					t => {
-						if array_state.value_state.advance(input).is_ok() {
-							JsonParserState::InArray(array_state)
-						} else {
-							return Err(BiaserError::InvalidToken(t.clone()));
-						}
+					} else {
+						return Err(BiaserError::InvalidToken(t.clone()));
 					}
 				}
-			}
+			},
 
 			JsonParserState::End(_) => return Err(BiaserError::InvalidToken(input.clone())),
 		};

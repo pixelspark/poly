@@ -73,6 +73,61 @@ pub fn test_empty_object_parser() {
 }
 
 #[test]
+pub fn test_nested_object_parser() {
+	setup();
+	let schema = JsonSchema::Object {
+		required: vec!["car".to_string()],
+		properties: {
+			let mut hn = HashMap::new();
+			hn.insert(
+				"car".to_string(),
+				Box::new(JsonSchema::Object {
+					required: vec!["name".to_string()],
+					properties: {
+						let mut hn = HashMap::new();
+						hn.insert(
+							"name".to_string(),
+							Box::new(JsonSchema::String {
+								max_length: None,
+								r#enum: None,
+							}),
+						);
+						hn
+					},
+				}),
+			);
+			hn
+		},
+	};
+
+	let mut biaser = JsonBiaser::new(&schema);
+
+	// {"car":{"name":"car mccarface"}}
+	let stream = vec![
+		JsonToken::CurlyOpen,
+		JsonToken::DoubleQuote,
+		JsonToken::String("car".to_string()),
+		JsonToken::DoubleQuote,
+		JsonToken::Colon,
+		JsonToken::CurlyOpen,
+		JsonToken::DoubleQuote,
+		JsonToken::String("name".to_string()),
+		JsonToken::DoubleQuote,
+		JsonToken::Colon,
+		JsonToken::DoubleQuote,
+		JsonToken::String("car mccarface".to_string()),
+		JsonToken::DoubleQuote,
+		JsonToken::CurlyClose,
+		JsonToken::CurlyClose,
+	];
+
+	for token in stream.iter() {
+		biaser.advance(token).unwrap();
+	}
+	assert!(biaser.next_valid_tokens().is_empty());
+}
+
+#[test]
 pub fn test_object_parser() {
 	tracing_subscriber::fmt::init();
 	let mut fields = HashMap::new();
