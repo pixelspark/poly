@@ -4,5 +4,9 @@ members = [
 	"llm-bias"
 ]
 
+[workspace.dependencies]
+#llm = { git = "https://github.com/rustformers/llm.git" }
+llm = { git = "https://github.com/pixelspark/llm.git", branch = "pedal-to-the-metal" }
+
 [patch.crates-io]
 llm-bias = { path = "./llm-bias" }

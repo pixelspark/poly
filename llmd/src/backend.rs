@@ -359,6 +359,7 @@ impl Backend {
 				prefer_mmap: true,
 				context_size: model_config.context_size,
 				lora_adapters: None,
+				use_gpu: model_config.use_gpu,
 			};
 
 			let model = Arc::new(
@@ -375,7 +376,7 @@ impl Backend {
 			);
 
 			backend.models.insert(model_name.clone(), model);
-			info!("Loaded model {}", model_name);
+			info!("Loaded model {} use_gpu={:?}", model_name, model_config.use_gpu);
 		}
 
 		// Verify tasks
@@ -396,7 +397,10 @@ impl Backend {
 		};
 
 		let model = self.models.get(model_name).unwrap();
-		let inference_config = InferenceSessionConfig::default();
+		let inference_config = InferenceSessionConfig {
+			use_gpu: self.config.models[model_name].use_gpu,
+			..InferenceSessionConfig::default()
+		};
 		let mut session = model.start_session(inference_config);
 		let inference_parameters: InferenceParameters = InferenceParameters {
 			n_threads: self.config.models[model_name].threads_per_session,
@@ -432,7 +436,10 @@ impl Backend {
 
 		let task_config = self.config.tasks.get(task_name).unwrap();
 		let model = self.models.get(&task_config.model).unwrap();
-		let inference_config = InferenceSessionConfig::default();
+		let inference_config = InferenceSessionConfig {
+			use_gpu: self.config.models[&task_config.model].use_gpu,
+			..InferenceSessionConfig::default()
+		};
 		let mut session = model.start_session(inference_config);
 
 		let mut inference_parameters: InferenceParameters = task_config.clone().into();

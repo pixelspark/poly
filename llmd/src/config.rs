@@ -37,6 +37,14 @@ pub struct ModelConfig {
 	/// Context size
 	#[serde(default = "default_context_size")]
 	pub context_size: usize,
+
+	/// Whether to use GPU acceleration, if available
+	#[serde(default = "default_use_gpu")]
+	pub use_gpu: bool,
+}
+
+const fn default_use_gpu() -> bool {
+	false
 }
 
 const fn default_threads_per_session() -> usize {

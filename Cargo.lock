@@ -10,9 +10,9 @@ checksum = "f26201604c87b1e01bd3d98f8d5d9a8fcbb815e8cedb41ffccbeb4bf593a35fe"
 
 [[package]]
 name = "aes"
-version = "0.8.2"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "433cfd6710c9986c576a25ca913c39d66a6474107b406f34f91d4a8923395241"
+checksum = "ac1f845298e95f983ff1944b728ae08b8cebab80d684f0a832ed0fc74dfa27e2"
 dependencies = [
  "cfg-if",
  "cipher",
@@ -134,7 +134,7 @@ dependencies = [
  "async-trait",
  "axum-core",
  "base64 0.21.2",
- "bitflags",
+ "bitflags 1.3.2",
  "bytes",
  "futures-util",
  "http",
@@ -200,6 +200,12 @@ name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
+
+[[package]]
+name = "bitflags"
+version = "2.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6dbe3c979c178231552ecba20214a8272df4e09f232a87aef4320cf06539aded"
 
 [[package]]
 name = "block-buffer"
@@ -321,7 +327,7 @@ checksum = "c1458a1df40e1e2afebb7ab60ce55c1fa8f431146205aa5f4887e0b111c27636"
 dependencies = [
  "anstream",
  "anstyle",
- "bitflags",
+ "bitflags 1.3.2",
  "clap_lex",
  "strsim",
 ]
@@ -781,16 +787,17 @@ dependencies = [
 [[package]]
 name = "ggml"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#e011ce8f8a53b4fe55cc030b216f91625efe46d7"
+source = "git+https://github.com/pixelspark/llm.git?branch=pedal-to-the-metal#d19f98581aff218c9a86b3beb272467a6013890a"
 dependencies = [
  "ggml-sys",
+ "memmap2",
  "thiserror",
 ]
 
 [[package]]
 name = "ggml-sys"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#e011ce8f8a53b4fe55cc030b216f91625efe46d7"
+source = "git+https://github.com/pixelspark/llm.git?branch=pedal-to-the-metal#d19f98581aff218c9a86b3beb272467a6013890a"
 dependencies = [
  "cc",
 ]
@@ -1116,7 +1123,7 @@ checksum = "ef53942eb7bf7ff43a617b3e2c1c4a5ecf5944a7c1bc12d7ee39bbb15e5c1519"
 [[package]]
 name = "llm"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#e011ce8f8a53b4fe55cc030b216f91625efe46d7"
+source = "git+https://github.com/pixelspark/llm.git?branch=pedal-to-the-metal#d19f98581aff218c9a86b3beb272467a6013890a"
 dependencies = [
  "llm-base",
  "llm-bloom",
@@ -1131,7 +1138,7 @@ dependencies = [
 [[package]]
 name = "llm-base"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#e011ce8f8a53b4fe55cc030b216f91625efe46d7"
+source = "git+https://github.com/pixelspark/llm.git?branch=pedal-to-the-metal#d19f98581aff218c9a86b3beb272467a6013890a"
 dependencies = [
  "bytemuck",
  "ggml",
@@ -1164,7 +1171,7 @@ dependencies = [
 [[package]]
 name = "llm-bloom"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#e011ce8f8a53b4fe55cc030b216f91625efe46d7"
+source = "git+https://github.com/pixelspark/llm.git?branch=pedal-to-the-metal#d19f98581aff218c9a86b3beb272467a6013890a"
 dependencies = [
  "bytemuck",
  "llm-base",
@@ -1173,7 +1180,7 @@ dependencies = [
 [[package]]
 name = "llm-gpt2"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#e011ce8f8a53b4fe55cc030b216f91625efe46d7"
+source = "git+https://github.com/pixelspark/llm.git?branch=pedal-to-the-metal#d19f98581aff218c9a86b3beb272467a6013890a"
 dependencies = [
  "bytemuck",
  "llm-base",
@@ -1182,7 +1189,7 @@ dependencies = [
 [[package]]
 name = "llm-gptj"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#e011ce8f8a53b4fe55cc030b216f91625efe46d7"
+source = "git+https://github.com/pixelspark/llm.git?branch=pedal-to-the-metal#d19f98581aff218c9a86b3beb272467a6013890a"
 dependencies = [
  "bytemuck",
  "llm-base",
@@ -1191,7 +1198,7 @@ dependencies = [
 [[package]]
 name = "llm-gptneox"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#e011ce8f8a53b4fe55cc030b216f91625efe46d7"
+source = "git+https://github.com/pixelspark/llm.git?branch=pedal-to-the-metal#d19f98581aff218c9a86b3beb272467a6013890a"
 dependencies = [
  "bytemuck",
  "llm-base",
@@ -1201,7 +1208,7 @@ dependencies = [
 [[package]]
 name = "llm-llama"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#e011ce8f8a53b4fe55cc030b216f91625efe46d7"
+source = "git+https://github.com/pixelspark/llm.git?branch=pedal-to-the-metal#d19f98581aff218c9a86b3beb272467a6013890a"
 dependencies = [
  "bytemuck",
  "llm-base",
@@ -1212,7 +1219,7 @@ dependencies = [
 [[package]]
 name = "llm-mpt"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#e011ce8f8a53b4fe55cc030b216f91625efe46d7"
+source = "git+https://github.com/pixelspark/llm.git?branch=pedal-to-the-metal#d19f98581aff218c9a86b3beb272467a6013890a"
 dependencies = [
  "bytemuck",
  "llm-base",
@@ -1488,7 +1495,7 @@ version = "6.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c4b31c8722ad9171c6d77d3557db078cab2bd50afcc9d09c8b315c59df8ca4f"
 dependencies = [
- "bitflags",
+ "bitflags 1.3.2",
  "libc",
  "once_cell",
  "onig_sys",
@@ -1510,7 +1517,7 @@ version = "0.10.54"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69b3f656a17a6cbc115b5c7a40c616947d213ba182135b014d6051b73ab6f019"
 dependencies = [
- "bitflags",
+ "bitflags 1.3.2",
  "cfg-if",
  "foreign-types",
  "libc",
@@ -1758,7 +1765,7 @@ version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fb5a58c1855b4b6819d59012155603f0b22ad30cad752600aadfcb695265519a"
 dependencies = [
- "bitflags",
+ "bitflags 1.3.2",
 ]
 
 [[package]]
@@ -1767,7 +1774,7 @@ version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "567664f262709473930a4bf9e51bf2ebf3348f2e748ccc50dea20646858f8f29"
 dependencies = [
- "bitflags",
+ "bitflags 1.3.2",
 ]
 
 [[package]]
@@ -1871,7 +1878,7 @@ version = "0.37.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b96e891d04aa506a6d1f318d2771bcb1c7dfda84e126660ace067c9b474bb2c0"
 dependencies = [
- "bitflags",
+ "bitflags 1.3.2",
  "errno",
  "io-lifetimes",
  "libc",
@@ -1912,7 +1919,7 @@ version = "2.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fc758eb7bffce5b308734e9b0c1468893cae9ff70ebf13e7090be8dcbcc83a8"
 dependencies = [
- "bitflags",
+ "bitflags 1.3.2",
  "core-foundation",
  "core-foundation-sys",
  "libc",
@@ -2395,11 +2402,11 @@ dependencies = [
 
 [[package]]
 name = "tower-http"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d1d42a9b3f3ec46ba828e8d376aec14592ea199f70a06a548587ecd1c4ab658"
+checksum = "a8bd22a874a2d0b70452d5597b12c537331d49060824a95f49f108994f94aa4c"
 dependencies = [
- "bitflags",
+ "bitflags 2.3.2",
  "bytes",
  "futures-core",
  "futures-util",
@@ -2445,9 +2452,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-attributes"
-version = "0.1.24"
+version = "0.1.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f57e3ca2a01450b1a921183a9c9cbfda207fd822cef4ccb00a65402cbba7a74"
+checksum = "8803eee176538f94ae9a14b55b2804eb7e1441f8210b1c31290b3bccdccff73b"
 dependencies = [
  "proc-macro2",
  "quote",
