@@ -1,6 +1,6 @@
 pipeline:
   build:
-    image: rust:1.69
+    image: rust:1.70
     commands:
       - cargo build --release
 
@@ -38,7 +38,7 @@ pipeline:
         - push
 
   tar:
-    image: rust:1.69
+    image: rust:1.70
     commands:
       - tar cf llmd.tar.gz target/release/llmd
     when:
