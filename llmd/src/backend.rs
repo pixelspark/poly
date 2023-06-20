@@ -354,28 +354,28 @@ impl Backend {
 		};
 
 		// Load models
-		for (endpoint_name, endpoint) in &backend.config.models {
+		for (model_name, model_config) in &backend.config.models {
 			let params = ModelParameters {
 				prefer_mmap: true,
-				context_size: endpoint.context_size,
+				context_size: model_config.context_size,
 				lora_adapters: None,
 			};
 
 			let model = Arc::new(
 				llm::load_dynamic(
-					endpoint.architecture,
-					&endpoint.model_path,
+					model_config.architecture,
+					&model_config.model_path,
 					llm::VocabularySource::Model,
 					params,
 					|progress| {
-						trace!("Loading endpoint {endpoint_name}: {progress:#?}");
+						trace!("Loading model {model_name}: {progress:#?}");
 					},
 				)
 				.expect("load model"),
 			);
 
-			backend.models.insert(endpoint_name.clone(), model);
-			info!("Loaded model for endpoint {}", endpoint_name);
+			backend.models.insert(model_name.clone(), model);
+			info!("Loaded model {}", model_name);
 		}
 
 		// Verify tasks
