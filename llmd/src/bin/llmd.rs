@@ -1,7 +1,7 @@
 use async_stream::stream;
 use axum::extract::{ws::Message, ws::WebSocket, ws::WebSocketUpgrade, Path, Query, State};
 use axum::http::header::CONTENT_TYPE;
-use axum::http::{HeaderValue, Method};
+use axum::http::{HeaderValue, Method, StatusCode};
 use axum::response::sse::Event;
 use axum::response::{IntoResponse, Sse};
 use axum::routing::{get, post};
@@ -93,6 +93,7 @@ async fn main() {
 				)
 				.route("/stats", get(stats_handler)),
 		)
+		.fallback(handler_not_found)
 		.layer(cors_layer)
 		.layer(ConcurrencyLimitLayer::new(state.config.max_concurrent))
 		.layer(TraceLayer::new_for_http())
@@ -346,6 +347,10 @@ async fn task_completion_handler(
 		}
 	})?;
 	Ok(Json(GenerateResponse { text }))
+}
+
+async fn handler_not_found() -> impl IntoResponse {
+	(StatusCode::NOT_FOUND, "not found")
 }
 
 async fn embedding_handler(
