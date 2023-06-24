@@ -379,6 +379,8 @@ impl Backend {
 			info!("Loaded model {} use_gpu={:?}", model_name, model_config.use_gpu);
 		}
 
+		info!("All models loaded");
+
 		// Verify tasks
 		for (task_name, task_config) in &backend.config.tasks {
 			if !backend.models.contains_key(&task_config.model) {
