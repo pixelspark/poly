@@ -11,7 +11,7 @@
       </dd>
     </dl>
 
-    <dl>
+    <dl v-if="task">
       <dt></dt>
       <dd>
         <button v-if="!socket" @click="connect">Connect</button>
@@ -36,6 +36,23 @@
         />
       </dd>
     </dl>
+
+    <dl>
+      <dt></dt>
+      <dd v-if="generatedTime > 0 && generatedTokens > 0">
+        {{ generatedTokens }} tokens in
+        {{ timeFormatter.format(generatedTime) }}s,
+        {{ timeFormatter.format(generatedTokens / generatedTime) }} t/s
+        <button
+          @click="
+            generatedTime = 0;
+            generatedTokens = 0;
+          "
+        >
+          Reset
+        </button>
+      </dd>
+    </dl>
   </div>
 </template>
 
@@ -57,12 +74,21 @@ let lastServerMessage: Ref<Message | null> = ref(null);
 
 const task = ref("");
 const tasks = ref([]);
+const generatingSince: Ref<null | number> = ref(null);
+const generatedTokens = ref(0);
+const generatedTime: Ref<number> = ref(0);
+
+const timeFormatter = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 2,
+  minimumFractionDigits: 2,
+});
 
 function send() {
   if (socket.value) {
     socket.value.send(userMessage.value);
     messages.value.push({ text: userMessage.value, source: "user" });
     userMessage.value = "";
+    generatingSince.value = new Date().getTime();
   }
 }
 
@@ -83,9 +109,17 @@ function connect() {
   );
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.searchParams.append("api_key", apiKey.value);
+  generatedTokens.value = 0;
+  generatedTime.value = 0;
+  generatingSince.value = null;
 
   socket.value = new WebSocket(url.toString());
   socket.value.onmessage = (me) => {
+    generatedTokens.value++;
+    const duration = (new Date().getTime() - generatingSince.value!) / 1000;
+    generatedTime.value += duration;
+    generatingSince.value = new Date().getTime();
+
     if (me.data === "") {
       lastServerMessage.value = null;
       return;
