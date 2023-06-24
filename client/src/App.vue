@@ -9,15 +9,17 @@
       <dd><input v-model="apiKey" placeholder="Api key..." /></dd>
     </dl>
 
-    <select v-model="screen">
-      <option value="task">Task</option>
-      <option value="embedding">Embedding</option>
-      <option value="chat">Chat</option>
-    </select>
+    <template v-if="authorized">
+      <select v-model="screen">
+        <option value="task">Task</option>
+        <option value="embedding">Embedding</option>
+        <option value="chat">Chat</option>
+      </select>
 
-    <Task v-if="screen === 'task'"></Task>
-    <Embedding v-else-if="screen === 'embedding'"></Embedding>
-    <Chat v-else-if="screen === 'chat'"></Chat>
+      <Task v-if="screen === 'task'"></Task>
+      <Embedding v-else-if="screen === 'embedding'"></Embedding>
+      <Chat v-else-if="screen === 'chat'"></Chat>
+    </template>
   </div>
 </template>
 
@@ -31,14 +33,58 @@ const screen = ref("chat");
 
 const apiKey = ref("");
 const base = ref(new URL("", document.location.toString()).toString());
+const authorized = ref(false);
 
 watch(base, (nv) => {
   window.localStorage.setItem("llmd.base", nv.toString());
 });
 
-onMounted(() => {
-  base.value = window.localStorage.getItem("llmd.base") || base.value;
+// TODO: fix this - when the func() completes in less than the timeout, it will happily run again
+function debounce(func: () => Promise<void>, timeout = 300) {
+  let running: Promise<void> | undefined;
+
+  return async () => {
+    if (running) {
+      running = new Promise((resolve, _reject) => {
+        running!.then(async () => {
+          setTimeout(async () => {
+            await func();
+            running = undefined;
+            resolve(undefined);
+          }, timeout);
+        });
+      });
+      await running;
+    } else {
+      running = func();
+      await running;
+      running = undefined;
+    }
+  };
+}
+
+const checkAuthorizedDebounced = debounce(checkAuthorized, 10000);
+
+watch(apiKey, async (nv) => {
+  window.localStorage.setItem("llmd.apiKey", nv.toString());
+  await checkAuthorizedDebounced();
 });
+
+onMounted(async () => {
+  base.value = window.localStorage.getItem("llmd.base") || base.value;
+  apiKey.value = window.localStorage.getItem("llmd.apiKey") || apiKey.value;
+  await checkAuthorizedDebounced();
+});
+
+async function checkAuthorized() {
+  const url = new URL("/v1/task", base.value);
+  if (apiKey.value.length > 0) {
+    url.searchParams.append("api_key", apiKey.value);
+  }
+  const res = await fetch(url);
+  console.log(res);
+  authorized.value = res.status == 200;
+}
 
 async function get(path: string, body: any) {
   const url = new URL(path, base.value);
