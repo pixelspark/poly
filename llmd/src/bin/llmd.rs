@@ -1,6 +1,6 @@
 use async_stream::stream;
 use axum::extract::{ws::Message, ws::WebSocket, ws::WebSocketUpgrade, Path, Query, State};
-use axum::http::header::CONTENT_TYPE;
+use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::{HeaderValue, Method, StatusCode};
 use axum::response::sse::Event;
 use axum::response::{IntoResponse, Sse};
@@ -55,8 +55,8 @@ async fn main() {
 		// Allow any origin by default
 		cors_layer = cors_layer.allow_origin(Any);
 	}
-	cors_layer = cors_layer.allow_headers([CONTENT_TYPE]);
-	cors_layer = cors_layer.allow_methods([Method::GET, Method::POST]);
+	cors_layer = cors_layer.allow_headers([CONTENT_TYPE, AUTHORIZATION]);
+	cors_layer = cors_layer.allow_methods([Method::GET, Method::POST, Method::OPTIONS]);
 
 	let state = Arc::new(Backend::from(config));
 
