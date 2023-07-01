@@ -1,6 +1,7 @@
 use std::{
 	borrow::Cow,
 	collections::HashMap,
+	fmt::Debug,
 	fs::File,
 	io::BufReader,
 	sync::{Arc, Mutex},
@@ -8,14 +9,16 @@ use std::{
 };
 
 use llm::{
-	samplers::TopPTopK, InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, InferenceSessionConfig, InferenceStats,
-	ModelParameters, OutputRequest, Prompt, TokenBias, TokenId, TokenUtf8Buffer, TokenizerSource,
+	samplers::TopPTopK, InferenceParameters, InferenceRequest, InferenceSessionConfig, InferenceStats, ModelParameters, OutputRequest, Prompt,
+	TokenBias, TokenId, TokenUtf8Buffer, TokenizerSource,
 };
 use llm_bias::{
 	json::{JsonBiaser, JsonSchema},
 	sampler::TopPTopKBiased,
 	Biaser, NullBiaser,
 };
+
+pub use llm::{InferenceFeedback, InferenceResponse};
 
 use crate::{
 	api::{EmbeddingResponse, GenerateError, PromptRequest, SessionRequest},
@@ -43,6 +46,16 @@ pub struct BackendSession {
 	task_config: TaskConfig,
 	stats: Arc<BackendStats>,
 	task_name: String,
+}
+
+impl Debug for BackendSession {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("BackendSession")
+			.field("inference_parameters", &self.inference_parameters)
+			.field("task_config", &self.task_config)
+			.field("task_name", &self.task_name)
+			.finish()
+	}
 }
 
 impl BackendSession {

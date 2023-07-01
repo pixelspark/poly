@@ -1,7 +1,10 @@
+
 [workspace]
+resolver= "2"
 members = [
 	"llmd",
-	"llm-bias"
+	"llm-bias",
+	"llm-ui"
 ]
 
 [workspace.dependencies]
@@ -9,3 +12,4 @@ llm = { git = "https://github.com/rustformers/llm.git" }
 
 [patch.crates-io]
 llm-bias = { path = "./llm-bias" }
+llmd = { path = "./llmd" }

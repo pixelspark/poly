@@ -29,6 +29,8 @@ use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, info, trace};
 
+pub use llm::InferenceFeedback;
+
 #[tokio::main]
 async fn main() {
 	tracing_subscriber::fmt::init();
