@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 
 use llm::TokenizationError;
-use llm::{TokenId, Vocabulary};
+use llm::{TokenId, Tokenizer};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_json::{json, Map};
@@ -140,7 +140,7 @@ enum JsonParserState<'schema> {
 }
 
 impl<'schema> Biaser for JsonBiaser<'schema> {
-	fn bias(&self, vocabulary: &Vocabulary, eot_token: TokenId) -> Vec<(TokenId, f32)> {
+	fn bias(&self, vocabulary: &Tokenizer, eot_token: TokenId) -> Vec<(TokenId, f32)> {
 		let next_valid_json_tokens = self.next_valid_tokens();
 		tracing::trace!("next valid tokens: {:?}", next_valid_json_tokens);
 
@@ -230,7 +230,7 @@ impl<'schema> Biaser for JsonBiaser<'schema> {
 		next_valid_tokens
 	}
 
-	fn advance(&mut self, vocabulary: &Vocabulary, token: TokenId) {
+	fn advance(&mut self, vocabulary: &Tokenizer, token: TokenId) {
 		let out_json_token = JsonToken::from_token(vocabulary, token).expect("valid token");
 		self.advance(&out_json_token).unwrap();
 		tracing::debug!("Token: {:?}, next valid tokens: {:?}", &out_json_token, self.next_valid_tokens());
@@ -319,13 +319,13 @@ impl JsonToken {
 		})
 	}
 
-	pub fn from_token(vocab: &Vocabulary, token: TokenId) -> Result<JsonToken, TokenizationError> {
+	pub fn from_token(vocab: &Tokenizer, token: TokenId) -> Result<JsonToken, TokenizationError> {
 		let bytes = vocab.decode(vec![token], false);
 		let s = String::from_utf8(bytes).map_err(|_e| TokenizationError::InvalidTokenId(token))?;
 		Self::from_text(&s).ok_or(TokenizationError::InvalidTokenId(token))
 	}
 
-	pub fn token_id(&self, vocab: &Vocabulary) -> Option<TokenId> {
+	pub fn token_id(&self, vocab: &Tokenizer) -> Option<TokenId> {
 		let Some(s) = self.to_string() else { return None };
 
 		match vocab.tokenize(&s, false) {

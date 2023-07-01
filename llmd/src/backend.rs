@@ -9,7 +9,7 @@ use std::{
 
 use llm::{
 	samplers::TopPTopK, InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse, InferenceSessionConfig, InferenceStats,
-	ModelParameters, OutputRequest, Prompt, TokenBias, TokenId, TokenUtf8Buffer,
+	ModelParameters, OutputRequest, Prompt, TokenBias, TokenId, TokenUtf8Buffer, TokenizerSource,
 };
 use llm_bias::{
 	json::{JsonBiaser, JsonSchema},
@@ -81,18 +81,18 @@ impl BackendSession {
 
 		// Append prefix tokens
 		if let Some(ref prefix) = self.task_config.prefix {
-			tokens.append(&mut Prompt::Text(prefix).to_tokens(self.model.vocabulary(), beginning_of_sentence)?);
+			tokens.append(&mut Prompt::Text(prefix).to_tokens(self.model.tokenizer(), beginning_of_sentence)?);
 		}
 
 		// Generate user prompt tokens
-		let mut user_tokens = Prompt::Text(&request.prompt).to_tokens(self.model.vocabulary(), beginning_of_sentence && tokens.is_empty())?;
+		let mut user_tokens = Prompt::Text(&request.prompt).to_tokens(self.model.tokenizer(), beginning_of_sentence && tokens.is_empty())?;
 
 		// Check for private tokens in user prompt
 		let private_tokens = self.task_config.private_tokens.clone().unwrap_or(vec![]);
 		let private_token_ids: Vec<u32> = private_tokens
 			.iter()
 			.map(|token_str| {
-				let toks = self.model.vocabulary().tokenize(token_str, false).unwrap();
+				let toks = self.model.tokenizer().tokenize(token_str, false).unwrap();
 				if toks.len() != 1 {
 					panic!("invalid forbidden token configured: {token_str}");
 				}
@@ -106,7 +106,7 @@ impl BackendSession {
 
 		// Append postfix tokens
 		if let Some(ref postfix) = self.task_config.postfix {
-			tokens.append(&mut Prompt::Text(postfix).to_tokens(self.model.vocabulary(), beginning_of_sentence && tokens.is_empty())?);
+			tokens.append(&mut Prompt::Text(postfix).to_tokens(self.model.tokenizer(), beginning_of_sentence && tokens.is_empty())?);
 		}
 
 		tracing::trace!("prompt tokens: {tokens:?}");
@@ -148,7 +148,7 @@ impl BackendSession {
 						InferenceResponse::InferredToken(t) => {
 							// Save to transcript
 							if tracing::enabled!(tracing::Level::DEBUG) {
-								tokens.push(self.model.vocabulary().tokenize(&t, false).unwrap()[0].1);
+								tokens.push(self.model.tokenizer().tokenize(&t, false).unwrap()[0].1);
 							}
 							tracing::trace!("Unbiased output token: {t}");
 							Ok(InferenceFeedback::Continue)
@@ -162,7 +162,7 @@ impl BackendSession {
 			// Feed the bias prompt
 			tracing::info!("feeding bias prompt: {bias_prompt}");
 			if tracing::enabled!(tracing::Level::DEBUG) {
-				tokens.extend(self.model.vocabulary().tokenize(bias_prompt, false).unwrap().iter().map(|x| x.1));
+				tokens.extend(self.model.tokenizer().tokenize(bias_prompt, false).unwrap().iter().map(|x| x.1));
 			}
 			let start = Instant::now();
 			self.session.feed_prompt(
@@ -195,7 +195,7 @@ impl BackendSession {
 
 		// Inference loop
 		let mut result_buffer = TokenUtf8Buffer::new();
-		let vocabulary = self.model.vocabulary();
+		let vocabulary = self.model.tokenizer();
 		let eot_token = self.model.eot_token_id();
 		let mut inference_params = self.inference_parameters.clone();
 		let mut tokens_generated: usize = 0;
@@ -316,7 +316,7 @@ impl BackendSession {
 		}
 
 		if tracing::enabled!(tracing::Level::DEBUG) {
-			let decoded = self.model.vocabulary().decode(tokens, false);
+			let decoded = self.model.tokenizer().decode(tokens, false);
 			let txt = String::from_utf8_lossy(&decoded);
 			tracing::debug!("full transcript (excluding prelude): {txt}");
 		}
@@ -364,9 +364,9 @@ impl Backend {
 
 			let model = Arc::new(
 				llm::load_dynamic(
-					model_config.architecture,
+					Some(model_config.architecture),
 					&model_config.model_path,
-					llm::VocabularySource::Model,
+					TokenizerSource::Embedded,
 					params,
 					|progress| {
 						trace!("Loading model {model_name}: {progress:#?}");
@@ -415,7 +415,7 @@ impl Backend {
 			all_logits: None,
 		};
 
-		let vocab = model.vocabulary();
+		let vocab = model.tokenizer();
 		let beginning_of_sentence = true;
 		let query_token_ids = vocab
 			.tokenize(&prompt.prompt, beginning_of_sentence)

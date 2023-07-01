@@ -238,7 +238,7 @@ pub fn test_json_biaser_objects() {
 	let model = llm::load_dynamic(
 		ModelArchitecture::GptNeoX,
 		Path::new(MODEL_PATH),
-		llm::VocabularySource::Model,
+		llm::TokenizerSource::Embedded,
 		ModelParameters::default(),
 		|_progress| {},
 	)
@@ -283,7 +283,7 @@ pub fn test_json_biaser() {
 	let model = llm::load_dynamic(
 		ModelArchitecture::GptNeoX,
 		Path::new(MODEL_PATH),
-		llm::VocabularySource::Model,
+		llm::TokenizerSource::Embedded,
 		ModelParameters::default(),
 		|_progress| {},
 	)
@@ -358,7 +358,7 @@ fn test_json_bias(schema: JsonSchema, model: &dyn Model) {
 
 		let mut bias = JsonBiaser::new(&schema);
 		let mut session = model.start_session(InferenceSessionConfig::default());
-		let vocab = model.vocabulary();
+		let vocab = model.tokenizer();
 
 		session
 			.feed_prompt(
