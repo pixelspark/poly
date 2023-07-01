@@ -236,7 +236,7 @@ static MODEL_PATH: &str = "../data/pythia-160m-q4_0.bin";
 pub fn test_json_biaser_objects() {
 	setup();
 	let model = llm::load_dynamic(
-		ModelArchitecture::GptNeoX,
+		Some(ModelArchitecture::GptNeoX),
 		Path::new(MODEL_PATH),
 		llm::TokenizerSource::Embedded,
 		ModelParameters::default(),
@@ -281,7 +281,7 @@ pub fn test_json_biaser_objects() {
 pub fn test_json_biaser() {
 	setup();
 	let model = llm::load_dynamic(
-		ModelArchitecture::GptNeoX,
+		Some(ModelArchitecture::GptNeoX),
 		Path::new(MODEL_PATH),
 		llm::TokenizerSource::Embedded,
 		ModelParameters::default(),
