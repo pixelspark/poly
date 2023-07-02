@@ -65,7 +65,6 @@ impl Application for App {
 			AppMessage::WorkerEvent(wevt) => {
 				match wevt {
 					LLMWorkerEvent::Loading(progress) => {
-						println!("Loading progress: {progress}");
 						self.loading_progress = progress;
 					}
 					LLMWorkerEvent::Ready(sender) => self.sender = Some(sender),
@@ -106,7 +105,7 @@ impl Application for App {
 			}
 		};
 
-		Command::none()
+		text_input::focus(CHAT_INPUT_ID.clone())
 	}
 
 	fn view(&self) -> Element<AppMessage> {
@@ -137,17 +136,20 @@ impl Application for App {
 			)
 		};
 
-		container(column![
-			// Toolbar
-			row![button("Reset").on_press(AppMessage::Reset)].spacing(5),
-			// Messages
-			scrollable(column(self.messages.iter().map(|m| -> Element<AppMessage> { m.view() }).collect()).spacing(5))
-				.width(Length::Fill)
-				.height(Length::Fill)
-				.id(CHAT_MESSAGES_SCROLLABLE_ID.clone()),
-			// Text input
-			input
-		])
+		container(
+			column![
+				// Toolbar
+				row![button("Reset").on_press(AppMessage::Reset)].spacing(5),
+				// Messages
+				scrollable(column(self.messages.iter().map(|m| -> Element<AppMessage> { m.view() }).collect()).spacing(5))
+					.width(Length::Fill)
+					.height(Length::Fill)
+					.id(CHAT_MESSAGES_SCROLLABLE_ID.clone()),
+				// Text input
+				input
+			]
+			.spacing(5),
+		)
 		.padding(10)
 		.height(Length::Fill)
 		.width(Length::Fill)
