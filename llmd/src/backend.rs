@@ -22,7 +22,7 @@ pub use llm::{InferenceFeedback, InferenceResponse};
 
 use crate::{
 	api::{EmbeddingResponse, GenerateError, PromptRequest, SessionRequest},
-	config::{BiaserConfig, Config, TaskConfig},
+	config::{BackendConfig, BiaserConfig, TaskConfig},
 	sequence::{Sequence, SequenceSet},
 	stats::{InferenceStatsAdd, TaskStats},
 };
@@ -34,7 +34,7 @@ pub struct BackendStats {
 }
 
 pub struct Backend {
-	pub config: Config,
+	pub config: BackendConfig,
 	pub models: HashMap<String, Arc<Box<dyn llm::Model>>>,
 	pub stats: Arc<BackendStats>,
 }
@@ -359,7 +359,7 @@ impl Default for BackendStats {
 }
 
 impl Backend {
-	pub fn from(config: Config) -> Backend {
+	pub fn from(config: BackendConfig, mut load_progress: impl FnMut(f64)) -> Backend {
 		let mut backend = Backend {
 			config,
 			models: HashMap::new(),
@@ -367,7 +367,8 @@ impl Backend {
 		};
 
 		// Load models
-		for (model_name, model_config) in &backend.config.models {
+		let n_models = backend.config.models.len();
+		for (index, (model_name, model_config)) in backend.config.models.iter().enumerate() {
 			let params = ModelParameters {
 				prefer_mmap: true,
 				context_size: model_config.context_size,
@@ -382,6 +383,17 @@ impl Backend {
 					TokenizerSource::Embedded,
 					params,
 					|progress| {
+						let fp = match progress {
+							llm::LoadProgress::HyperparametersLoaded => 0.0,
+							llm::LoadProgress::ContextSize { .. } => 0.0,
+							llm::LoadProgress::LoraApplied { .. } => 0.0,
+							llm::LoadProgress::TensorLoaded {
+								current_tensor,
+								tensor_count,
+							} => (current_tensor as f64) / (tensor_count as f64),
+							llm::LoadProgress::Loaded { .. } => 1.0,
+						};
+						load_progress((index as f64 + fp) / n_models as f64);
 						trace!("Loading model {model_name}: {progress:#?}");
 					},
 				)

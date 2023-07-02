@@ -1,6 +1,7 @@
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [package]
 name = "llm-ui"
+description = "LLM UI"
 version = "0.1.0"
 edition = "2021"
 
@@ -16,3 +17,25 @@ llmd = "*"
 once_cell = "1.18.0"
 toml = "0.7.4"
 tokio = { version = "1.28.1", features = ["full"] }
+
+[target.'cfg(target_os="macos")'.dependencies]
+core-foundation = "0.9.3"
+
+[dev-dependencies]
+cargo-bundle = "0.6.0"
+
+# Cargo-bundle settings
+# See https://github.com/burtonageo/cargo-bundle#example-cargotoml
+[package.metadata.bundle]
+name = "LLM"
+identifier = "nl.dialogic.llm.ui"
+icon = ["assets/icon512x512@2x.png"]
+version = "1.0.0"
+resources = ["data"]
+copyright = "Copyright (c) Tommy van der Vorst, 2023. All rights reserved"
+category = "Developer Tool"
+short_description = "Large language model"
+long_description = ""
+deb_depends = []
+osx_frameworks = []
+osx_url_schemes = []

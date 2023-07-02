@@ -12,7 +12,13 @@ use jsonwebtoken::Validation;
 use crate::{
 	api::{JwtClaims, KeyQuery},
 	backend::Backend,
+	config::Config,
 };
+
+pub struct Server {
+	pub backend: Backend,
+	pub config: Config,
+}
 
 /// Middleware that checks whether the user has access to a certain task.
 pub async fn authorize<T>(
@@ -32,7 +38,7 @@ pub async fn authorize<T>(
 
 /// Middleware that authenticates a user using static pre-shared API keys or a JWT
 pub async fn authenticate<T>(
-	State(state): State<Arc<Backend>>,
+	State(state): State<Arc<Server>>,
 	Query(key): Query<KeyQuery>,
 	mut req: Request<T>,
 	next: Next<T>,

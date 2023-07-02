@@ -15,7 +15,7 @@ use llmd::api::{
 };
 use llmd::backend::Backend;
 use llmd::config::{Args, Config};
-use llmd::middleware::{authenticate, authorize};
+use llmd::middleware::{authenticate, authorize, Server};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -60,7 +60,10 @@ async fn main() {
 	cors_layer = cors_layer.allow_headers([CONTENT_TYPE, AUTHORIZATION]);
 	cors_layer = cors_layer.allow_methods([Method::GET, Method::POST, Method::OPTIONS]);
 
-	let state = Arc::new(Backend::from(config));
+	let state = Arc::new(Server {
+		backend: Backend::from(config.backend_config.clone(), |_progress| {}),
+		config,
+	});
 
 	// Set up API server
 	let app = Router::new()
@@ -104,8 +107,8 @@ async fn main() {
 	axum::Server::bind(&bind_address).serve(app.into_make_service()).await.unwrap();
 }
 
-async fn stats_handler(State(state): State<Arc<Backend>>) -> impl IntoResponse {
-	let task_stats = state.stats.task_stats.lock().unwrap().clone();
+async fn stats_handler(State(state): State<Arc<Server>>) -> impl IntoResponse {
+	let task_stats = state.backend.stats.task_stats.lock().unwrap().clone();
 	Json(StatsResponse { tasks: task_stats })
 }
 
@@ -118,34 +121,34 @@ async fn status_with_user_handler(Extension(current_user): Extension<JwtClaims>)
 	Json(StatusResponse { status: Status::Ok })
 }
 
-async fn models_handler(State(state): State<Arc<Backend>>) -> impl IntoResponse {
+async fn models_handler(State(state): State<Arc<Server>>) -> impl IntoResponse {
 	Json(ModelsResponse {
-		models: state.config.models.keys().cloned().collect(),
+		models: state.config.backend_config.models.keys().cloned().collect(),
 	})
 }
 
-async fn tasks_handler(State(state): State<Arc<Backend>>) -> impl IntoResponse {
+async fn tasks_handler(State(state): State<Arc<Server>>) -> impl IntoResponse {
 	Json(TasksResponse {
-		tasks: state.config.tasks.keys().cloned().collect(),
+		tasks: state.config.backend_config.tasks.keys().cloned().collect(),
 	})
 }
 
 async fn ws_task_handler(
 	ws: WebSocketUpgrade,
-	State(backend): State<Arc<Backend>>,
+	State(state): State<Arc<Server>>,
 	Path(task_name): Path<String>,
 	Query(request): Query<SessionRequest>,
 ) -> impl IntoResponse {
 	debug!("New websocket connection for task '{}'", task_name.as_str());
-	ws.on_upgrade(move |socket| socket_task_handler(socket, backend, task_name, request))
+	ws.on_upgrade(move |socket| socket_task_handler(socket, state, task_name, request))
 }
 
-async fn socket_task_handler(mut ws: WebSocket, backend: Arc<Backend>, task_name: String, request: SessionRequest) {
+async fn socket_task_handler(mut ws: WebSocket, state: Arc<Server>, task_name: String, request: SessionRequest) {
 	// Spawn a blocking thread
 	let (tx_prompt, rx_prompt) = std::sync::mpsc::channel();
 	let (tx_response, mut rx_response) = tokio::sync::mpsc::channel::<Result<String, String>>(32);
 	thread::spawn(move || {
-		let mut session = backend.start(&task_name, &request).unwrap();
+		let mut session = state.backend.start(&task_name, &request).unwrap();
 		while let Ok(prompt) = rx_prompt.recv() {
 			let prompt_request = PromptRequest { prompt };
 			let res = session.complete(&prompt_request, |r| match r {
@@ -230,7 +233,7 @@ async fn socket_task_handler(mut ws: WebSocket, backend: Arc<Backend>, task_name
 }
 
 async fn sse_task_handler(
-	State(backend): State<Arc<Backend>>,
+	State(state): State<Arc<Server>>,
 	Path(task_name): Path<String>,
 	Query(request): Query<SessionRequest>,
 	Query(prompt): Query<PromptRequest>,
@@ -242,7 +245,8 @@ async fn sse_task_handler(
 	let active_clone = active.clone();
 
 	tokio::spawn(async move {
-		backend
+		state
+			.backend
 			.start(&task_name, &request)
 			.unwrap()
 			.complete(&prompt, |r| -> Result<_, GenerateError> {
@@ -298,7 +302,7 @@ async fn sse_task_handler(
 }
 
 async fn get_model_embedding_handler(
-	State(state): State<Arc<Backend>>,
+	State(state): State<Arc<Server>>,
 	Path(endpoint_name): Path<String>,
 	Query(request): Query<SessionRequest>,
 	Query(prompt): Query<PromptRequest>,
@@ -307,7 +311,7 @@ async fn get_model_embedding_handler(
 }
 
 async fn post_model_embedding_handler(
-	State(state): State<Arc<Backend>>,
+	State(state): State<Arc<Server>>,
 	Path(endpoint_name): Path<String>,
 	Json(request): Json<SessionAndPromptRequest>,
 ) -> Result<Json<EmbeddingResponse>, GenerateError> {
@@ -315,7 +319,7 @@ async fn post_model_embedding_handler(
 }
 
 async fn get_task_completion_handler(
-	State(state): State<Arc<Backend>>,
+	State(state): State<Arc<Server>>,
 	Path(task_name): Path<String>,
 	Query(request): Query<SessionRequest>,
 	Query(prompt): Query<PromptRequest>,
@@ -324,7 +328,7 @@ async fn get_task_completion_handler(
 }
 
 async fn post_task_completion_handler(
-	State(state): State<Arc<Backend>>,
+	State(state): State<Arc<Server>>,
 	Path(task_name): Path<String>,
 	Json(request): Json<SessionAndPromptRequest>,
 ) -> Result<Json<GenerateResponse>, GenerateError> {
@@ -332,22 +336,25 @@ async fn post_task_completion_handler(
 }
 
 async fn task_completion_handler(
-	backend: Arc<Backend>,
+	state: Arc<Server>,
 	task_name: &str,
 	request: &SessionRequest,
 	prompt: &PromptRequest,
 ) -> Result<Json<GenerateResponse>, GenerateError> {
 	let mut text = String::new();
-	backend.start(task_name, request)?.complete(prompt, |r| -> Result<_, GenerateError> {
-		match r {
-			llm::InferenceResponse::InferredToken(t) => {
-				trace!("Output: {t}");
-				text += &t;
-				Ok(llm::InferenceFeedback::Continue)
+	state
+		.backend
+		.start(task_name, request)?
+		.complete(prompt, |r| -> Result<_, GenerateError> {
+			match r {
+				llm::InferenceResponse::InferredToken(t) => {
+					trace!("Output: {t}");
+					text += &t;
+					Ok(llm::InferenceFeedback::Continue)
+				}
+				_ => Ok(llm::InferenceFeedback::Continue),
 			}
-			_ => Ok(llm::InferenceFeedback::Continue),
-		}
-	})?;
+		})?;
 	Ok(Json(GenerateResponse { text }))
 }
 
@@ -356,10 +363,10 @@ async fn handler_not_found() -> impl IntoResponse {
 }
 
 async fn embedding_handler(
-	backend: Arc<Backend>,
+	state: Arc<Server>,
 	endpoint_name: &str,
 	_request: &SessionRequest,
 	prompt: &PromptRequest,
 ) -> Result<Json<EmbeddingResponse>, GenerateError> {
-	Ok(Json(backend.embedding(endpoint_name, prompt)?))
+	Ok(Json(state.backend.embedding(endpoint_name, prompt)?))
 }

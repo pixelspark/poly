@@ -1,0 +1,13 @@
+[models.orcamini3b]
+# Paths are relative to the data directory
+model_path = "orca-mini-3b.ggmlv3.q4_0.bin"
+architecture = "llama"
+use_gpu = true
+context_size = 512
+
+[tasks.llm]
+model = "orcamini3b"
+prelude = "### System:\nYou are an AI assistant that follows instruction extremely well. Help as much as you can.\n"
+prefix =  "\n### User:\n"
+postfix = "\n### Response:"
+

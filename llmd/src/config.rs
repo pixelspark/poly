@@ -1,6 +1,6 @@
 use clap::Parser;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey};
-use llm::ModelArchitecture;
+pub use llm::ModelArchitecture;
 use llm_bias::json::JsonSchema;
 use serde::{Deserialize, Deserializer};
 use std::{collections::HashMap, path::PathBuf};
@@ -160,17 +160,24 @@ pub enum JwtPrivateKey {
 	Symmetric(String),
 }
 
+#[derive(Deserialize, Clone, Debug, Default)]
+#[serde(default)]
+pub struct BackendConfig {
+	/// Models that are used
+	pub models: HashMap<String, ModelConfig>,
+
+	/// Tasks that are made available
+	pub tasks: HashMap<String, TaskConfig>,
+}
+
 #[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Config {
 	/// Address and port to bind the server to ("0.0.0.0:1234")
 	pub bind_address: String,
 
-	/// Models that are used
-	pub models: HashMap<String, ModelConfig>,
-
-	/// Tasks that are made available
-	pub tasks: HashMap<String, TaskConfig>,
+	#[serde(flatten)]
+	pub backend_config: BackendConfig,
 
 	/// CORS allowed origins
 	pub allowed_origins: Option<Vec<String>>,
@@ -192,8 +199,7 @@ impl Default for Config {
 	fn default() -> Self {
 		Self {
 			bind_address: String::from("0.0.0.0:3000"),
-			models: HashMap::new(),
-			tasks: HashMap::new(),
+			backend_config: BackendConfig::default(),
 			allowed_origins: None,
 			max_concurrent: 8,
 			allowed_keys: vec![],

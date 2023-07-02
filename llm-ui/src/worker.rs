@@ -7,12 +7,15 @@ use iced::{
 use llmd::{
 	api::{PromptRequest, SessionRequest},
 	backend::Backend,
-	config::Config,
+	config::BackendConfig,
 };
 use tokio::task::spawn_blocking;
 
+use crate::util::resource_path;
+
 #[derive(Debug, Clone)]
 pub enum LLMWorkerEvent {
+	Loading(f64),
 	Ready(mpsc::Sender<LLMWorkerCommand>),
 	Running(bool),
 	ResponseToken(String),
@@ -34,13 +37,38 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 	subscription::channel(std::any::TypeId::of::<LLMWorker>(), 100, move |mut output| async move {
 		let mut state = LLMWorkerState::Starting;
 
-		let mut config_file = File::open("config.toml").expect("open config file");
+		let mut config_file = File::open(resource_path("config.toml")).expect("open config file");
 		let mut config_string = String::new();
 		config_file.read_to_string(&mut config_string).expect("read config file");
-		let config: Config = toml::from_str(&config_string).unwrap();
-		let backend = Backend::from(config);
-		let first_task_name = backend.config.tasks.keys().next().unwrap();
-		let mut session = backend.start(first_task_name, &SessionRequest {}).unwrap();
+
+		let mut config: BackendConfig = toml::from_str(&config_string).unwrap();
+
+		// Update model paths
+		for (_k, model_config) in config.models.iter_mut() {
+			if !model_config.model_path.starts_with("/") {
+				model_config.model_path = resource_path(model_config.model_path.to_str().unwrap());
+			}
+		}
+
+		// Load backend
+		let main_task_name = config.tasks.keys().next().unwrap().clone();
+		let backend = {
+			let (ptx, mut prx) = tokio::sync::mpsc::channel(16);
+			let backend_future = spawn_blocking(move || {
+				Backend::from(config, |progress| {
+					ptx.blocking_send(progress).unwrap();
+				})
+			});
+
+			while let Some(progress) = prx.recv().await {
+				output.send(LLMWorkerEvent::Loading(progress)).await.unwrap();
+				// For testing the loading progress bar
+				// tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+			}
+
+			backend_future.await.unwrap()
+		};
+		let mut session = backend.start(&main_task_name, &SessionRequest {}).unwrap();
 
 		loop {
 			match &mut state {
@@ -61,7 +89,7 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 					match input {
 						LLMWorkerCommand::Reset => {
 							// Create a new session
-							session = backend.start(first_task_name, &SessionRequest {}).unwrap();
+							session = backend.start(&main_task_name, &SessionRequest {}).unwrap();
 						}
 
 						LLMWorkerCommand::Prompt(prompt) => {
