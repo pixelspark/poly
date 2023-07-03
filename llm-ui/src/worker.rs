@@ -45,8 +45,10 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 
 		// Update model paths
 		for (_k, model_config) in config.models.iter_mut() {
-			if !model_config.model_path.starts_with("/") {
-				model_config.model_path = resource_path(model_config.model_path.to_str().unwrap());
+			let model_path_str = model_config.model_path.to_str().unwrap();
+			// Paths that are prefixed with '@' are relative to the data folder
+			if model_path_str.starts_with('@') {
+				model_config.model_path = resource_path(model_path_str.strip_prefix('@').unwrap());
 			}
 		}
 
