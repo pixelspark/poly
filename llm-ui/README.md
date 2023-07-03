@@ -13,3 +13,13 @@ cargo run --release --bin llm-ui --features=metal
 cargo add --dev cargo-bundle
 cargo bundle --release --features=metal
 ```
+
+## Usage
+
+To use different models than the one included, you can place a custom `config.toml` in one of the following places:
+
+- macOS: `~/Library/Application Support/nl.Dialogic.LLM/_config.toml`
+- Linux: `~/.config/llm/config.toml`
+- Windows: `%USERPROFILE%\AppData\Roaming\Dialogic\LLM\config.toml`
+
+When a file is found, it will be used over the included configuration file.

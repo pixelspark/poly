@@ -1,5 +1,6 @@
 use std::{fs::File, io::Read};
 
+use directories::ProjectDirs;
 use iced::{
 	futures::{channel::mpsc, SinkExt, StreamExt},
 	subscription, Subscription,
@@ -37,7 +38,23 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 	subscription::channel(std::any::TypeId::of::<LLMWorker>(), 100, move |mut output| async move {
 		let mut state = LLMWorkerState::Starting;
 
-		let mut config_file = File::open(resource_path("config.toml")).expect("open config file");
+		let mut config_file_path = resource_path("config.toml");
+
+		// Check if the user has a local override config
+		if let Some(proj_dirs) = ProjectDirs::from("nl", "Dialogic", "LLM") {
+			let config_dir = proj_dirs.config_dir();
+			let user_config_path = config_dir.join("config.toml");
+			tracing::info!("Looking for configuration file at {}", user_config_path.to_str().unwrap());
+			if user_config_path.exists() {
+				config_file_path = user_config_path;
+				tracing::info!("Using user configuration file");
+			} else {
+				tracing::info!("Using built-in configuration file");
+			}
+		}
+
+		// Load the config file
+		let mut config_file = File::open(config_file_path).expect("open config file");
 		let mut config_string = String::new();
 		config_file.read_to_string(&mut config_string).expect("read config file");
 
