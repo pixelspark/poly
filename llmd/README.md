@@ -39,6 +39,15 @@ To generate embeddings:
 curl -XPOST --url http://localhost:3000/v1/task/pythia/embedding --header 'Content-type: application/json' --data '{"prompt": "Hello "}' -vvv
 ```
 
+### With CUDA
+
+From the root of the repository:
+
+```bash
+sudo docker build -t llmd -f cublas.Dockerfile .
+sudo docker run -it --rm -v $(pwd)/data:/llmd/data -v $(pwd)/config.toml:/llmd/config.toml --gpus all -e RUST_LOG=debug -p 3000:3000 llmd
+```
+
 ### WebSocket chat API
 
 To chat, connect through WebSocket to the following endpoint:
