@@ -3,8 +3,8 @@ use crate::worker::{LLMWorkerCommand, LLMWorkerEvent};
 use iced::alignment::Horizontal;
 use iced::futures::channel::mpsc::Sender;
 use iced::widget::scrollable::RelativeOffset;
-use iced::widget::{button, column, progress_bar, row, scrollable, text, text_input};
-use iced::{clipboard, executor, Application, Color, Command, Element, Subscription, Theme};
+use iced::widget::{button, column, pick_list, progress_bar, row, scrollable, text, text_input};
+use iced::{clipboard, executor, Alignment, Application, Color, Command, Element, Subscription, Theme};
 use iced::{widget::container, Length};
 use once_cell::sync::Lazy;
 
@@ -15,18 +15,21 @@ pub struct App {
 	message: String,
 	messages: Vec<ChatMessage>,
 	sender: Option<Sender<LLMWorkerCommand>>,
+	tasks: Vec<String>,
+	selected_task: Option<String>,
 	running: bool,
 	loading_progress: f64,
 }
 
 #[derive(Debug, Clone)]
 pub enum AppMessage {
-	Reset,
-	Interrupt,
-	Type(String),
-	Send,
-	WorkerEvent(LLMWorkerEvent),
+	ChangeTask(String),
 	CopyText(String),
+	Interrupt,
+	Reset,
+	Send,
+	Type(String),
+	WorkerEvent(LLMWorkerEvent),
 }
 
 impl Application for App {
@@ -43,6 +46,8 @@ impl Application for App {
 				sender: None,
 				running: false,
 				loading_progress: 0.0,
+				tasks: vec![],
+				selected_task: None,
 			},
 			Command::none(),
 		)
@@ -59,6 +64,19 @@ impl Application for App {
 	fn update(&mut self, message: Self::Message) -> Command<AppMessage> {
 		match message {
 			AppMessage::Type(t) => self.message = t,
+			AppMessage::ChangeTask(t) => {
+				if !self.selected_task.as_ref().is_some_and(|x| x == &t) {
+					self.selected_task = Some(t);
+					self.messages.clear();
+					if let Some(ref mut sender) = self.sender {
+						sender
+							.try_send(LLMWorkerCommand::Reset {
+								task_name: self.selected_task.clone().unwrap(),
+							})
+							.unwrap();
+					}
+				}
+			}
 			AppMessage::CopyText(t) => return clipboard::write(t),
 			AppMessage::Interrupt => {
 				if let Some(ref mut sender) = self.sender {
@@ -71,7 +89,15 @@ impl Application for App {
 					LLMWorkerEvent::Loading(progress) => {
 						self.loading_progress = progress;
 					}
-					LLMWorkerEvent::Ready(sender) => self.sender = Some(sender),
+					LLMWorkerEvent::Ready {
+						sender,
+						tasks,
+						selected_task,
+					} => {
+						self.sender = Some(sender);
+						self.tasks = tasks;
+						self.selected_task = Some(selected_task);
+					}
 					LLMWorkerEvent::Running(r) => {
 						self.running = r;
 						return iced::widget::text_input::focus(CHAT_INPUT_ID.clone());
@@ -104,7 +130,11 @@ impl Application for App {
 			AppMessage::Reset => {
 				self.messages.clear();
 				if let Some(ref mut sender) = self.sender {
-					sender.try_send(LLMWorkerCommand::Reset).unwrap();
+					sender
+						.try_send(LLMWorkerCommand::Reset {
+							task_name: self.selected_task.clone().unwrap(),
+						})
+						.unwrap();
 				}
 			}
 		};
@@ -153,9 +183,18 @@ impl Application for App {
 						button("Stop").on_press(AppMessage::Interrupt).into()
 					} else {
 						Element::new(text(""))
+					},
+					if self.tasks.is_empty() {
+						Element::new(text(self.selected_task.clone().unwrap_or("".to_string())))
+					} else {
+						pick_list(&self.tasks, self.selected_task.clone(), AppMessage::ChangeTask)
+							.width(Length::Fill)
+							.into()
 					}
 				]
-				.spacing(5),
+				.spacing(5)
+				.align_items(Alignment::Center)
+				.width(Length::Fill),
 				// Messages
 				scrollable(if self.messages.is_empty() {
 					Element::new(

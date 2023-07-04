@@ -5,9 +5,18 @@ architecture = "llama"
 use_gpu = true
 context_size = 512
 
-[tasks.llm]
+[models.rpchat3b]
+model_path = "@RedPajama-INCITE-Chat-3B-v1-q4_0-ggjt.bin"
+architecture = "gptneox"
+use_gpu = false
+
+[tasks."Orca mini 3b"]
 model = "orcamini3b"
 prelude = "### System:\nYou are an AI assistant that follows instruction extremely well. Help as much as you can.\n"
 prefix =  "\n### User:\n"
 postfix = "\n### Response:"
 
+[tasks.rp]
+model = "rpchat3b"
+prefix = "<human>: "
+postfix = "\n<bot>:"

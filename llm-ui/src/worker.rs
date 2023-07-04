@@ -24,7 +24,11 @@ use crate::util::resource_path;
 #[derive(Debug, Clone)]
 pub enum LLMWorkerEvent {
 	Loading(f64),
-	Ready(mpsc::Sender<LLMWorkerCommand>),
+	Ready {
+		sender: mpsc::Sender<LLMWorkerCommand>,
+		tasks: Vec<String>,
+		selected_task: String,
+	},
 	Running(bool),
 	ResponseToken(String),
 }
@@ -32,7 +36,7 @@ pub enum LLMWorkerEvent {
 pub enum LLMWorkerCommand {
 	Prompt(String),
 	Interrupt,
-	Reset,
+	Reset { task_name: String },
 }
 
 enum LLMWorkerState {
@@ -77,8 +81,11 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 			}
 		}
 
+		let mut task_names: Vec<String> = config.tasks.keys().cloned().collect();
+		task_names.sort();
+		let mut selected_task_name = config.tasks.keys().next().unwrap().clone();
+
 		// Load backend
-		let main_task_name = config.tasks.keys().next().unwrap().clone();
 		let backend = {
 			let (ptx, mut prx) = tokio::sync::mpsc::channel(16);
 			let backend_future = spawn_blocking(move || {
@@ -95,7 +102,7 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 
 			backend_future.await.unwrap()
 		};
-		let mut session = backend.start(&main_task_name, &SessionRequest {}).unwrap();
+		let mut session = backend.start(&selected_task_name, &SessionRequest {}).unwrap();
 
 		loop {
 			match &mut state {
@@ -104,7 +111,14 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 					let (sender, receiver) = mpsc::channel(100);
 
 					// Send the sender back to the application
-					output.send(LLMWorkerEvent::Ready(sender)).await.unwrap();
+					output
+						.send(LLMWorkerEvent::Ready {
+							sender,
+							tasks: task_names.clone(),
+							selected_task: selected_task_name.clone(),
+						})
+						.await
+						.unwrap();
 
 					// We are ready to receive messages
 					state = LLMWorkerState::Ready(receiver);
@@ -114,9 +128,10 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 					let input = receiver.select_next_some().await;
 
 					match input {
-						LLMWorkerCommand::Reset => {
+						LLMWorkerCommand::Reset { task_name } => {
 							// Create a new session
-							session = backend.start(&main_task_name, &SessionRequest {}).unwrap();
+							selected_task_name = task_name;
+							session = backend.start(&selected_task_name, &SessionRequest {}).unwrap();
 						}
 
 						LLMWorkerCommand::Interrupt => {}
