@@ -22,6 +22,7 @@ pub struct App {
 #[derive(Debug, Clone)]
 pub enum AppMessage {
 	Reset,
+	Interrupt,
 	Type(String),
 	Send,
 	WorkerEvent(LLMWorkerEvent),
@@ -59,6 +60,11 @@ impl Application for App {
 		match message {
 			AppMessage::Type(t) => self.message = t,
 			AppMessage::CopyText(t) => return clipboard::write(t),
+			AppMessage::Interrupt => {
+				if let Some(ref mut sender) = self.sender {
+					sender.try_send(LLMWorkerCommand::Interrupt).unwrap();
+				}
+			}
 
 			AppMessage::WorkerEvent(wevt) => {
 				match wevt {
@@ -137,11 +143,18 @@ impl Application for App {
 		container(
 			column![
 				// Toolbar
-				row![if self.messages.is_empty() {
-					Element::new(text(""))
-				} else {
-					button("Reset").on_press(AppMessage::Reset).into()
-				}]
+				row![
+					if self.messages.is_empty() || self.running {
+						Element::new(text(""))
+					} else {
+						button("Restart").on_press(AppMessage::Reset).into()
+					},
+					if self.running {
+						button("Stop").on_press(AppMessage::Interrupt).into()
+					} else {
+						Element::new(text(""))
+					}
+				]
 				.spacing(5),
 				// Messages
 				scrollable(if self.messages.is_empty() {

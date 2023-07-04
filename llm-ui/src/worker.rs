@@ -1,4 +1,11 @@
-use std::{fs::File, io::Read};
+use std::{
+	fs::File,
+	io::Read,
+	sync::{
+		atomic::{AtomicBool, Ordering},
+		Arc,
+	},
+};
 
 use directories::ProjectDirs;
 use iced::{
@@ -7,10 +14,10 @@ use iced::{
 };
 use llmd::{
 	api::{PromptRequest, SessionRequest},
-	backend::Backend,
+	backend::{Backend, InferenceFeedback},
 	config::BackendConfig,
 };
-use tokio::task::spawn_blocking;
+use tokio::{select, task::spawn_blocking};
 
 use crate::util::resource_path;
 
@@ -24,6 +31,7 @@ pub enum LLMWorkerEvent {
 
 pub enum LLMWorkerCommand {
 	Prompt(String),
+	Interrupt,
 	Reset,
 }
 
@@ -111,10 +119,15 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 							session = backend.start(&main_task_name, &SessionRequest {}).unwrap();
 						}
 
+						LLMWorkerCommand::Interrupt => {}
+
 						LLMWorkerCommand::Prompt(prompt) => {
 							let (ptx, mut prx) = tokio::sync::mpsc::channel(16);
 
 							// Do some async work...
+							let cancelled = Arc::new(AtomicBool::new(false));
+							let cancelled_clone = cancelled.clone();
+
 							output.send(LLMWorkerEvent::Running(true)).await.unwrap();
 							let session_fut = spawn_blocking(move || {
 								// Swallow errors. Typically 'context full'
@@ -128,13 +141,29 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 										}
 										llmd::backend::InferenceResponse::EotToken => return Ok(llmd::backend::InferenceFeedback::Halt),
 									}
-									Ok(llmd::backend::InferenceFeedback::Continue)
+									if cancelled_clone.load(Ordering::SeqCst) {
+										return Ok(InferenceFeedback::Halt);
+									}
+									Ok(InferenceFeedback::Continue)
 								});
 								session
 							});
 
-							while let Some(token) = prx.recv().await {
-								output.send(LLMWorkerEvent::ResponseToken(token)).await.unwrap();
+							loop {
+								select! {
+									token = prx.recv() => {
+										match token {
+											Some(token) => output.send(LLMWorkerEvent::ResponseToken(token)).await.unwrap(),
+											None => break
+										};
+									},
+									LLMWorkerCommand::Interrupt = receiver.select_next_some() => {
+										tracing::info!("Interrupted");
+										cancelled.store(true, Ordering::SeqCst);
+										break;
+									},
+									else => break
+								}
 							}
 
 							session = session_fut.await.unwrap();
