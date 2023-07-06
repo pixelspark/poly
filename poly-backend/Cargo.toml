@@ -1,0 +1,24 @@
+[package]
+name = "poly-backend"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+metal = ["llm/metal"]
+cublas = ["llm/cublas"]
+
+[dependencies]
+async-stream = "0.3.5"
+futures-util = "0.3.28"
+llm = { workspace = true }
+rand = "0.8.5"
+serde = { version = "1.0.163", features = ["derive"] }
+serde_json = "1.0.96"
+thiserror = "1.0.40"
+tokio = { version = "1.28.1", features = ["full"] }
+toml = "0.7.4"
+tracing = "0.1.37"
+tracing-subscriber = "0.3.17"
+tracing-test = "0.2.4"
+poly-bias = "0.1.0"

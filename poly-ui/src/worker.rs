@@ -12,10 +12,10 @@ use iced::{
 	futures::{channel::mpsc, SinkExt, StreamExt},
 	subscription, Subscription,
 };
-use llmd::{
-	api::{PromptRequest, SessionRequest},
-	backend::{Backend, InferenceFeedback},
+use poly_backend::{
+	backend::{Backend, InferenceFeedback, InferenceResponse},
 	config::BackendConfig,
+	types::{PromptRequest, SessionRequest},
 };
 use tokio::{select, task::spawn_blocking};
 
@@ -53,7 +53,7 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 		let mut config_file_path = resource_path("config.toml");
 
 		// Check if the user has a local override config
-		if let Some(proj_dirs) = ProjectDirs::from("nl", "Dialogic", "LLM") {
+		if let Some(proj_dirs) = ProjectDirs::from("nl", "Dialogic", "Poly") {
 			let config_dir = proj_dirs.config_dir();
 			let user_config_path = config_dir.join("config.toml");
 			tracing::info!("Looking for configuration file at {}", user_config_path.to_str().unwrap());
@@ -149,12 +149,12 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 								// TODO handle this in a better way
 								let _ = session.complete(&PromptRequest { prompt }, |feo| {
 									match feo {
-										llmd::backend::InferenceResponse::SnapshotToken(_) => {}
-										llmd::backend::InferenceResponse::PromptToken(_) => {}
-										llmd::backend::InferenceResponse::InferredToken(ft) => {
+										InferenceResponse::SnapshotToken(_) => {}
+										InferenceResponse::PromptToken(_) => {}
+										InferenceResponse::InferredToken(ft) => {
 											ptx.blocking_send(ft).unwrap();
 										}
-										llmd::backend::InferenceResponse::EotToken => return Ok(llmd::backend::InferenceFeedback::Halt),
+										InferenceResponse::EotToken => return Ok(InferenceFeedback::Halt),
 									}
 									if cancelled_clone.load(Ordering::SeqCst) {
 										return Ok(InferenceFeedback::Halt);

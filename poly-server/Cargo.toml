@@ -1,12 +1,13 @@
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [package]
-name = "llmd"
+name = "poly-server"
 version = "0.1.0"
 edition = "2021"
 default-run = "llmd"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
+default = []
 metal = ["llm/metal"]
 cublas = ["llm/cublas"]
 
@@ -14,7 +15,6 @@ cublas = ["llm/cublas"]
 async-stream = "0.3.5"
 axum = {version = "0.6.18", features = ["ws"]}
 clap = { version = "4.3.0", features = ["derive"] }
-flume = "0.10.14"
 futures-util = "0.3.28"
 llm = { workspace = true }
 rand = "0.8.5"
@@ -28,5 +28,6 @@ tower-http = { version = "0.4.0", features = ["fs", "cors", "trace"] }
 tracing = "0.1.37"
 tracing-subscriber = "0.3.17"
 tracing-test = "0.2.4"
-llm-bias = "0.1.0"
+poly-bias = "0.1.0"
+poly-backend = "0.1.0"
 jsonwebtoken = "8.3.0"

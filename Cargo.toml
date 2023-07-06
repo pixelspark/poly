@@ -2,14 +2,15 @@
 [workspace]
 resolver= "2"
 members = [
-	"llmd",
-	"llm-bias",
-	"llm-ui"
+	"poly-server",
+	"poly-bias",
+	"poly-ui",
+	"poly-backend"
 ]
 
 [workspace.dependencies]
-llm = { git = "https://github.com/rustformers/llm.git" }
+llm = { git = "https://github.com/rustformers/llm.git", default-features = false, features = ["models"] }
 
 [patch.crates-io]
-llm-bias = { path = "./llm-bias" }
-llmd = { path = "./llmd" }
+poly-bias = { path = "./poly-bias" }
+poly-backend = { path = "./poly-backend" }

@@ -2,7 +2,7 @@ use std::{fs::File, io::Read, path::PathBuf};
 
 use clap::Parser;
 use jsonwebtoken::{get_current_timestamp, Header};
-use llmd::{api::JwtClaims, config::Config};
+use poly_server::{api::JwtClaims, config::Config};
 use rand::Rng;
 
 #[derive(Parser, Debug)]

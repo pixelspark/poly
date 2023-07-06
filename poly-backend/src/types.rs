@@ -1,28 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
-
-use axum::{http::StatusCode, response::IntoResponse};
 use llm::{samplers::TopPTopK, InferenceError, InferenceParameters, TokenBias, TokenizationError};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use thiserror::Error;
 
-use crate::{config::TaskConfig, stats::TaskStats};
-
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-pub struct JwtClaims {
-	pub exp: Option<usize>,         // Expiry time
-	pub sub: Option<String>,        // User identifier (currently only used for logging)
-	pub tasks: Option<Vec<String>>, // Optional list of tasks this token is allowed to use
-}
-
-#[derive(Deserialize, Clone, Debug)]
-pub struct KeyQuery {
-	pub api_key: Option<String>,
-}
-
-#[derive(Serialize, Clone, Debug)]
-pub struct StatsResponse {
-	pub tasks: HashMap<String, TaskStats>,
-}
+use crate::config::TaskConfig;
 
 #[derive(Deserialize, Clone, Debug, Default)]
 #[serde(default)]
@@ -108,20 +89,4 @@ pub enum GenerateError {
 
 	#[error("illegal token encountered")]
 	IllegalToken,
-}
-
-impl GenerateError {
-	fn status_code(&self) -> StatusCode {
-		match self {
-			GenerateError::TaskNotFound(_) | GenerateError::ModelNotFound(_) => StatusCode::NOT_FOUND,
-			GenerateError::InferenceError(_) | GenerateError::TokenizationError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-			GenerateError::IllegalToken => StatusCode::BAD_REQUEST,
-		}
-	}
-}
-
-impl IntoResponse for GenerateError {
-	fn into_response(self) -> axum::response::Response {
-		(self.status_code(), format!("{}", self)).into_response()
-	}
 }

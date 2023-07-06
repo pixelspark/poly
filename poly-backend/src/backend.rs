@@ -12,7 +12,7 @@ use llm::{
 	samplers::TopPTopK, InferenceParameters, InferenceRequest, InferenceSessionConfig, InferenceStats, ModelParameters, OutputRequest, Prompt,
 	TokenBias, TokenId, TokenUtf8Buffer, TokenizerSource,
 };
-use llm_bias::{
+use poly_bias::{
 	json::{JsonBiaser, JsonSchema},
 	sampler::TopPTopKBiased,
 	Biaser, NullBiaser,
@@ -21,13 +21,13 @@ use llm_bias::{
 pub use llm::{InferenceFeedback, InferenceResponse};
 
 use crate::{
-	api::{EmbeddingResponse, GenerateError, PromptRequest, SessionRequest},
 	config::{BackendConfig, BiaserConfig, TaskConfig},
 	sequence::{Sequence, SequenceSet},
 	stats::{InferenceStatsAdd, TaskStats},
+	types::{EmbeddingResponse, GenerateError, PromptRequest, SessionRequest},
 };
 
-use tracing::log::*;
+use tracing::*;
 
 pub struct BackendStats {
 	pub task_stats: Mutex<HashMap<String, TaskStats>>,

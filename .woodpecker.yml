@@ -2,7 +2,7 @@ pipeline:
   build:
     image: rust:1.70
     commands:
-      - cargo build --release
+      - cargo build --release --bin=llmd
 
   build_client:
     image: node:18

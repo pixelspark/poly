@@ -1,0 +1,29 @@
+{
+  "type": "object",
+  "required": ["ingredients", "steps"],
+  "properties": {
+    "ingredients": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["unit", "amount", "ingredient"],
+        "properties": {
+          "ingredient": { "type": "string" },
+          "amount": { "type": "number" },
+          "unit": { "type": "string", "enum": ["g", "ml", "tbsp"] }
+        }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["duration", "instruction"],
+        "properties": {
+          "duration": { "type": "number" },
+          "instruction": { "type": "string" }
+        }
+      }
+    }
+  }
+}

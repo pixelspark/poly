@@ -7,7 +7,7 @@ use llm::{
 	TokenBias, TokenUtf8Buffer,
 };
 
-use llm_bias::{
+use poly_bias::{
 	json::{BiaserError, JsonBiaser, JsonSchema, JsonToken},
 	Biaser,
 };

@@ -1,4 +1,6 @@
-# LLMD web client
+# Poly web client
+
+For use with [poly-server](../poly-server) (llmd).
 
 ## Building
 

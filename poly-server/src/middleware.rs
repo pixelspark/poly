@@ -11,9 +11,10 @@ use jsonwebtoken::Validation;
 
 use crate::{
 	api::{JwtClaims, KeyQuery},
-	backend::Backend,
 	config::Config,
 };
+
+use poly_backend::backend::Backend;
 
 pub struct Server {
 	pub backend: Backend,

@@ -7,7 +7,7 @@ fn resources_path() -> PathBuf {
 		PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap())
 			.parent()
 			.unwrap()
-			.join("llm-ui")
+			.join("poly-ui")
 			.join(RESOURCES_DIR)
 	} else {
 		#[cfg(target_os = "macos")]

@@ -6,7 +6,7 @@ RUN npm install && npm run build
 FROM rust:1.70 as builder
 WORKDIR /src
 COPY . .
-RUN cargo build --release
+RUN cargo build --release --bin=llmd
 
 FROM debian:bullseye-slim
 RUN apt-get update && apt-get install -y libssl1.1 ca-certificates curl

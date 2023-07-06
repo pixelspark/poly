@@ -9,13 +9,16 @@ use axum::{Extension, Json, Router};
 use clap::Parser;
 use futures_util::Stream;
 use llm::InferenceResponse;
-use llmd::api::{
-	EmbeddingResponse, GenerateError, GenerateResponse, JwtClaims, ModelsResponse, PromptRequest, SessionAndPromptRequest, SessionRequest,
-	StatsResponse, Status, StatusResponse, TasksResponse,
+use poly_backend::backend::Backend;
+use poly_backend::types::{
+	EmbeddingResponse, GenerateResponse, ModelsResponse, PromptRequest, SessionAndPromptRequest, SessionRequest, Status, StatusResponse,
+	TasksResponse,
 };
-use llmd::backend::Backend;
-use llmd::config::{Args, Config};
-use llmd::middleware::{authenticate, authorize, Server};
+use poly_server::api::GenerateError;
+use poly_server::api::JwtClaims;
+use poly_server::api::StatsResponse;
+use poly_server::config::{Args, Config};
+use poly_server::middleware::{authenticate, authorize, Server};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -28,12 +31,15 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, info, trace};
+use tracing_subscriber::EnvFilter;
 
 pub use llm::InferenceFeedback;
 
 #[tokio::main]
 async fn main() {
-	tracing_subscriber::fmt::init();
+	tracing_subscriber::fmt()
+		.with_env_filter(EnvFilter::try_from_default_env().or_else(|_| EnvFilter::try_new("info")).unwrap())
+		.init();
 	// Read config file
 	let args = Args::parse();
 	let mut config_file = File::open(args.config_path).expect("open config file");
@@ -249,7 +255,7 @@ async fn sse_task_handler(
 			.backend
 			.start(&task_name, &request)
 			.unwrap()
-			.complete(&prompt, |r| -> Result<_, GenerateError> {
+			.complete(&prompt, |r| -> Result<_, poly_backend::types::GenerateError> {
 				match r {
 					llm::InferenceResponse::InferredToken(t) => {
 						let tx = tx.clone();
@@ -345,7 +351,7 @@ async fn task_completion_handler(
 	state
 		.backend
 		.start(task_name, request)?
-		.complete(prompt, |r| -> Result<_, GenerateError> {
+		.complete(prompt, |r| -> Result<_, poly_backend::types::GenerateError> {
 			match r {
 				llm::InferenceResponse::InferredToken(t) => {
 					trace!("Output: {t}");

@@ -1,4 +1,4 @@
-# llm-bias
+# poly-bias
 
 LLM response biasing utilities.
 

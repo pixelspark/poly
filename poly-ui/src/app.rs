@@ -54,7 +54,7 @@ impl Application for App {
 	}
 
 	fn title(&self) -> String {
-		String::from("LLM")
+		String::from("Poly")
 	}
 
 	fn subscription(&self) -> Subscription<Self::Message> {
