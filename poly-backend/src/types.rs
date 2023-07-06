@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use thiserror::Error;
 
-use crate::config::TaskConfig;
+use crate::{config::TaskConfig, memory::MemoryError};
 
 #[derive(Deserialize, Clone, Debug, Default)]
 #[serde(default)]
@@ -81,12 +81,22 @@ pub enum GenerateError {
 	#[error("model not found: {0}")]
 	ModelNotFound(String),
 
+	// llm_base::InferenceError is not Send
 	#[error("inference error: {0}")]
-	InferenceError(#[from] InferenceError),
+	InferenceError(String),
 
 	#[error("tokenization error: {0}")]
 	TokenizationError(#[from] TokenizationError),
 
 	#[error("illegal token encountered")]
 	IllegalToken,
+
+	#[error("memory error: {0}")]
+	Memory(#[from] MemoryError),
+}
+
+impl From<InferenceError> for GenerateError {
+	fn from(e: InferenceError) -> GenerateError {
+		GenerateError::InferenceError(e.to_string())
+	}
 }

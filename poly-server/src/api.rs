@@ -37,6 +37,7 @@ impl GenerateError {
 		match self.0 {
 			OriginalGenerateError::TaskNotFound(_) | OriginalGenerateError::ModelNotFound(_) => StatusCode::NOT_FOUND,
 			OriginalGenerateError::InferenceError(_) | OriginalGenerateError::TokenizationError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+			OriginalGenerateError::Memory(_) => StatusCode::INTERNAL_SERVER_ERROR,
 			OriginalGenerateError::IllegalToken => StatusCode::BAD_REQUEST,
 		}
 	}

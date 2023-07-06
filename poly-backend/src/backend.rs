@@ -38,17 +38,19 @@ pub struct BackendStats {
 pub struct Backend {
 	pub config: BackendConfig,
 	pub models: HashMap<String, Arc<Box<dyn llm::Model>>>,
-	pub memories: HashMap<String, Arc<Box<Mutex<dyn Memory>>>>,
+	pub memories: HashMap<String, Arc<Box<tokio::sync::Mutex<dyn Memory>>>>,
 	pub stats: Arc<BackendStats>,
 }
 
 pub struct BackendSession {
 	model: Arc<Box<dyn llm::Model>>,
+	memory: Option<Arc<Box<tokio::sync::Mutex<dyn Memory>>>>,
 	session: llm::InferenceSession,
 	inference_parameters: InferenceParameters,
 	task_config: TaskConfig,
 	stats: Arc<BackendStats>,
 	task_name: String,
+	backend: Arc<Backend>,
 }
 
 impl Debug for BackendSession {
@@ -68,7 +70,7 @@ impl BackendSession {
 		request: &PromptRequest,
 		callback: impl FnMut(InferenceResponse) -> Result<InferenceFeedback, GenerateError>,
 	) -> Result<InferenceStats, GenerateError> {
-		let stats = self.complete_actual(request, callback)?;
+		let stats = self.complete_actual(&request, callback)?;
 		let prompt_tokens_per_s = (stats.prompt_tokens as f64) / stats.feed_prompt_duration.as_secs_f64();
 		let predict_tokens_per_s = (stats.predict_tokens as f64) / stats.predict_duration.as_secs_f64();
 
@@ -77,6 +79,26 @@ impl BackendSession {
 			stats
 		);
 		self.stats.add(&self.task_name, &stats, self.inference_parameters.n_threads);
+
+		// Perform memorization
+		if let Some(memorization) = &self.task_config.memorization {
+			if memorization.store_prompts {
+				let backend = self.backend.clone();
+
+				// Calculate embedding
+				let embedding = backend.embedding(&self.task_config.model, request)?;
+
+				// Commit to memory in the background
+				let text = request.prompt.clone();
+				let memory = self.memory.clone().unwrap();
+				tokio::spawn(async move {
+					let mut memory = memory.lock().await;
+					memory.store(&text, &embedding.embedding).await.unwrap();
+					tracing::debug!("committed to memory: {text}");
+				});
+			}
+		}
+
 		Ok(stats)
 	}
 
@@ -374,7 +396,9 @@ impl Backend {
 		for (memory_name, memory_config) in backend.config.memory.iter() {
 			info!("Loading memory {memory_name}");
 			let mem = HoraMemory::new(&memory_config.path, memory_config.dimensions).unwrap();
-			backend.memories.insert(memory_name.clone(), Arc::new(Box::new(Mutex::new(mem))));
+			backend
+				.memories
+				.insert(memory_name.clone(), Arc::new(Box::new(tokio::sync::Mutex::new(mem))));
 		}
 
 		// Load models
@@ -422,6 +446,12 @@ impl Backend {
 			if !backend.models.contains_key(&task_config.model) {
 				panic!("model {} not found for task {}", task_config.model, task_name);
 			}
+
+			if let Some(memorization) = &task_config.memorization {
+				if !backend.memories.contains_key(&memorization.memory) {
+					panic!("memory {} not found for task {}", memorization.memory, task_name);
+				}
+			}
 		}
 
 		backend
@@ -465,7 +495,19 @@ impl Backend {
 		})
 	}
 
-	pub fn start(&self, task_name: &str, _request: &SessionRequest) -> Result<BackendSession, GenerateError> {
+	pub async fn memorize(&self, task_name: &str, data: &str) -> Result<(), GenerateError> {
+		// Memorization
+		let task_config = &self.config.tasks[task_name];
+		if let Some(memorization) = &task_config.memorization {
+			let memory = self.memories[&memorization.memory].clone();
+			let embedding = self.embedding(&task_config.model, &PromptRequest { prompt: data.to_string() })?;
+			let mut memory: tokio::sync::MutexGuard<'_, dyn Memory> = memory.lock().await;
+			memory.store(data, &embedding.embedding).await?;
+		}
+		Ok(())
+	}
+
+	pub fn start(&self, task_name: &str, _request: &SessionRequest, backend: Arc<Backend>) -> Result<BackendSession, GenerateError> {
 		info!("Start session {task_name}");
 
 		if !self.config.tasks.contains_key(task_name) {
@@ -473,6 +515,12 @@ impl Backend {
 		};
 
 		let task_config = self.config.tasks.get(task_name).unwrap();
+
+		let memory = match &task_config.memorization {
+			Some(mc) => Some(self.memories.get(&mc.memory).clone().unwrap()),
+			None => None,
+		};
+
 		let model = self.models.get(&task_config.model).unwrap();
 		let inference_config = InferenceSessionConfig {
 			use_gpu: self.config.models[&task_config.model].use_gpu,
@@ -501,11 +549,13 @@ impl Backend {
 
 		Ok(BackendSession {
 			model: model.clone(),
+			memory: memory.cloned(),
 			session,
 			inference_parameters,
 			task_config: task_config.clone(),
 			stats: self.stats.clone(),
 			task_name: task_name.to_string(),
+			backend,
 		})
 	}
 }

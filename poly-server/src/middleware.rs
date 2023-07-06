@@ -17,7 +17,7 @@ use crate::{
 use poly_backend::backend::Backend;
 
 pub struct Server {
-	pub backend: Backend,
+	pub backend: Arc<Backend>,
 	pub config: Config,
 }
 

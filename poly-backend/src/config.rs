@@ -70,6 +70,18 @@ pub enum BiaserConfig {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+pub struct TaskMemorizationConfig {
+	/// The memory to use
+	pub memory: String,
+
+	/// Whether to store prompts
+	pub store_prompts: bool,
+
+	/// How many items from the memory to retrieve
+	pub retrieve: Option<usize>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct TaskConfig {
 	pub model: String,
 
@@ -131,6 +143,9 @@ pub struct TaskConfig {
 	/// Sequences that when they occur end generation (just like end-of-text token)
 	#[serde(default = "default_stop_sequences")]
 	pub stop_sequences: Vec<String>,
+
+	/// Memorization config
+	pub memorization: Option<TaskMemorizationConfig>,
 }
 
 const fn default_stop_sequences() -> Vec<String> {

@@ -57,6 +57,7 @@ pub mod hora {
 			// TODO: error handling
 			self.index.add(embedding, text.to_string()).unwrap();
 			self.index.build(hora::core::metrics::Metric::Euclidean).unwrap();
+			self.index.dump(self.path.to_str().unwrap()).unwrap();
 			Ok(())
 		}
 

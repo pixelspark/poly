@@ -23,7 +23,6 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 use std::{fs::File, io::Read};
 use tower::limit::ConcurrencyLimitLayer;
@@ -67,7 +66,7 @@ async fn main() {
 	cors_layer = cors_layer.allow_methods([Method::GET, Method::POST, Method::OPTIONS]);
 
 	let state = Arc::new(Server {
-		backend: Backend::from(config.backend_config.clone(), |_progress| {}),
+		backend: Arc::new(Backend::from(config.backend_config.clone(), |_progress| {})),
 		config,
 	});
 
@@ -151,11 +150,11 @@ async fn ws_task_handler(
 
 async fn socket_task_handler(mut ws: WebSocket, state: Arc<Server>, task_name: String, request: SessionRequest) {
 	// Spawn a blocking thread
-	let (tx_prompt, rx_prompt) = std::sync::mpsc::channel();
+	let (tx_prompt, mut rx_prompt) = tokio::sync::mpsc::channel(16);
 	let (tx_response, mut rx_response) = tokio::sync::mpsc::channel::<Result<String, String>>(32);
-	thread::spawn(move || {
-		let mut session = state.backend.start(&task_name, &request).unwrap();
-		while let Ok(prompt) = rx_prompt.recv() {
+	let t = tokio::task::spawn_blocking(move || {
+		let mut session = state.backend.start(&task_name, &request, state.backend.clone()).unwrap();
+		while let Some(prompt) = rx_prompt.blocking_recv() {
 			let prompt_request = PromptRequest { prompt };
 			let res = session.complete(&prompt_request, |r| match r {
 				InferenceResponse::InferredToken(token) => {
@@ -200,7 +199,7 @@ async fn socket_task_handler(mut ws: WebSocket, state: Arc<Server>, task_name: S
 					match msg.unwrap() {
 						Message::Text(prompt) => {
 							tracing::trace!("WebSocket receive prompt text: {prompt}");
-							tx_prompt.send(prompt).unwrap();
+							tx_prompt.send(prompt).await.unwrap();
 						},
 						Message::Close(_close_frame) => {
 							_ = ws.close().await;
@@ -234,8 +233,9 @@ async fn socket_task_handler(mut ws: WebSocket, state: Arc<Server>, task_name: S
 				}
 			}
 		}
-		tracing::info!("WebSocket connection closed");
 	});
+	t.await.unwrap();
+	tracing::info!("WebSocket connection closed");
 }
 
 async fn sse_task_handler(
@@ -250,32 +250,31 @@ async fn sse_task_handler(
 	let active = Arc::new(AtomicBool::new(true));
 	let active_clone = active.clone();
 
-	tokio::spawn(async move {
-		state
-			.backend
-			.start(&task_name, &request)
-			.unwrap()
-			.complete(&prompt, |r| -> Result<_, poly_backend::types::GenerateError> {
-				match r {
-					llm::InferenceResponse::InferredToken(t) => {
-						let tx = tx.clone();
+	let mut session = state.backend.start(&task_name, &request, state.backend.clone()).unwrap();
 
-						// Do not continue when client has disconnected
-						if tx.is_closed() || !active_clone.load(Ordering::SeqCst) {
-							debug!("client has disconnected live session, halting generation");
-							return Ok(llm::InferenceFeedback::Halt);
-						}
-						tokio::spawn(async move {
-							// This may fail when a client disconnects while we are generating a token, but we don't care (anymore).
-							tx.send(t).await
-						});
-						Ok(llm::InferenceFeedback::Continue)
+	tokio::task::spawn_blocking(move || {
+		session.complete(&prompt, |r| -> Result<_, poly_backend::types::GenerateError> {
+			match r {
+				llm::InferenceResponse::InferredToken(t) => {
+					let tx = tx.clone();
+
+					// Do not continue when client has disconnected
+					if tx.is_closed() || !active_clone.load(Ordering::SeqCst) {
+						debug!("client has disconnected live session, halting generation");
+						return Ok(llm::InferenceFeedback::Halt);
 					}
-					_ => Ok(llm::InferenceFeedback::Continue),
+					tokio::spawn(async move {
+						// This may fail when a client disconnects while we are generating a token, but we don't care (anymore).
+						tx.send(t).await
+					});
+					Ok(llm::InferenceFeedback::Continue)
 				}
-			})
-			.unwrap();
-	});
+				_ => Ok(llm::InferenceFeedback::Continue),
+			}
+		})
+	})
+	.await
+	.unwrap()?;
 
 	struct Guard {
 		flag: Arc<AtomicBool>,
@@ -310,10 +309,10 @@ async fn sse_task_handler(
 async fn get_model_embedding_handler(
 	State(state): State<Arc<Server>>,
 	Path(endpoint_name): Path<String>,
-	Query(request): Query<SessionRequest>,
-	Query(prompt): Query<PromptRequest>,
+	Query(request): Query<SessionAndPromptRequest>,
 ) -> Result<Json<EmbeddingResponse>, GenerateError> {
-	embedding_handler(state, &endpoint_name, &request, &prompt).await
+	let SessionAndPromptRequest { session, prompt } = request;
+	embedding_handler(state, &endpoint_name, &session, &prompt).await
 }
 
 async fn post_model_embedding_handler(
@@ -321,7 +320,8 @@ async fn post_model_embedding_handler(
 	Path(endpoint_name): Path<String>,
 	Json(request): Json<SessionAndPromptRequest>,
 ) -> Result<Json<EmbeddingResponse>, GenerateError> {
-	embedding_handler(state, &endpoint_name, &request.session, &request.prompt).await
+	let SessionAndPromptRequest { session, prompt } = request;
+	embedding_handler(state, &endpoint_name, &session, &prompt).await
 }
 
 async fn get_task_completion_handler(
@@ -330,7 +330,7 @@ async fn get_task_completion_handler(
 	Query(request): Query<SessionRequest>,
 	Query(prompt): Query<PromptRequest>,
 ) -> Result<Json<GenerateResponse>, GenerateError> {
-	task_completion_handler(state, &task_name, &request, &prompt).await
+	task_completion_handler(state, task_name, request, prompt).await
 }
 
 async fn post_task_completion_handler(
@@ -338,30 +338,34 @@ async fn post_task_completion_handler(
 	Path(task_name): Path<String>,
 	Json(request): Json<SessionAndPromptRequest>,
 ) -> Result<Json<GenerateResponse>, GenerateError> {
-	task_completion_handler(state, &task_name, &request.session, &request.prompt).await
+	task_completion_handler(state, task_name, request.session, request.prompt).await
 }
 
 async fn task_completion_handler(
 	state: Arc<Server>,
-	task_name: &str,
-	request: &SessionRequest,
-	prompt: &PromptRequest,
+	task_name: String,
+	request: SessionRequest,
+	prompt: PromptRequest,
 ) -> Result<Json<GenerateResponse>, GenerateError> {
-	let mut text = String::new();
-	state
-		.backend
-		.start(task_name, request)?
-		.complete(prompt, |r| -> Result<_, poly_backend::types::GenerateError> {
-			match r {
-				llm::InferenceResponse::InferredToken(t) => {
-					trace!("Output: {t}");
-					text += &t;
-					Ok(llm::InferenceFeedback::Continue)
+	tokio::task::spawn_blocking(move || {
+		let mut text = String::new();
+		state.backend.start(&task_name, &request, state.backend.clone())?.complete(
+			&prompt,
+			|r| -> Result<_, poly_backend::types::GenerateError> {
+				match r {
+					llm::InferenceResponse::InferredToken(t) => {
+						trace!("Output: {t}");
+						text += &t;
+						Ok(llm::InferenceFeedback::Continue)
+					}
+					_ => Ok(llm::InferenceFeedback::Continue),
 				}
-				_ => Ok(llm::InferenceFeedback::Continue),
-			}
-		})?;
-	Ok(Json(GenerateResponse { text }))
+			},
+		)?;
+		Ok(Json(GenerateResponse { text }))
+	})
+	.await
+	.unwrap()
 }
 
 async fn handler_not_found() -> impl IntoResponse {

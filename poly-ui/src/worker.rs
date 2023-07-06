@@ -86,7 +86,7 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 		let mut selected_task_name = config.tasks.keys().next().unwrap().clone();
 
 		// Load backend
-		let backend = {
+		let backend = Arc::new({
 			let (ptx, mut prx) = tokio::sync::mpsc::channel(16);
 			let backend_future = spawn_blocking(move || {
 				Backend::from(config, |progress| {
@@ -101,8 +101,8 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 			}
 
 			backend_future.await.unwrap()
-		};
-		let mut session = backend.start(&selected_task_name, &SessionRequest {}).unwrap();
+		});
+		let mut session = backend.start(&selected_task_name, &SessionRequest {}, backend.clone()).unwrap();
 
 		loop {
 			match &mut state {
@@ -131,7 +131,7 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 						LLMWorkerCommand::Reset { task_name } => {
 							// Create a new session
 							selected_task_name = task_name;
-							session = backend.start(&selected_task_name, &SessionRequest {}).unwrap();
+							session = backend.start(&selected_task_name, &SessionRequest {}, backend.clone()).unwrap();
 						}
 
 						LLMWorkerCommand::Interrupt => {}
