@@ -1,4 +1,4 @@
-FROM node:18 AS clientbuilder
+FROM node:20 AS clientbuilder
 WORKDIR /src
 COPY ./client .
 RUN npm install && npm run build
