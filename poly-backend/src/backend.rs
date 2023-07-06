@@ -64,12 +64,43 @@ impl Debug for BackendSession {
 }
 
 impl BackendSession {
+	fn reminder_prompt(&mut self, request: &PromptRequest) -> Result<Option<String>, GenerateError> {
+		// Check if we need to recall items from memory first
+		if let Some(memorization) = &self.task_config.memorization {
+			if let Some(retrieve) = memorization.retrieve {
+				if retrieve > 0 {
+					// Calculate embedding for prompt
+					let backend = self.backend.clone();
+					let embedding = backend.embedding(&self.task_config.model, request)?;
+
+					let handle = tokio::runtime::Handle::current();
+					let _guard = handle.enter();
+					let memory = self.memory.clone().unwrap();
+					let reminder_prompt = handle
+						.block_on(tokio::spawn(async move {
+							let memory = memory.lock().await;
+							let rm = memory.get(&embedding.embedding, retrieve);
+							let remembered = rm.await?;
+							tracing::debug!("retrieved from memory: {remembered:?}");
+							let reminder_prompt: String = remembered.join("\n");
+							Ok::<_, GenerateError>(reminder_prompt)
+						}))
+						.unwrap()?;
+					tracing::info!("Reminder prompt: {reminder_prompt}");
+					return Ok(Some(reminder_prompt));
+				}
+			}
+		}
+		Ok(None)
+	}
+
 	/// Perform a completion task following the task's configuration.
 	pub fn complete(
 		&mut self,
 		request: &PromptRequest,
 		callback: impl FnMut(InferenceResponse) -> Result<InferenceFeedback, GenerateError>,
 	) -> Result<InferenceStats, GenerateError> {
+		// Perform inference
 		let stats = self.complete_actual(&request, callback)?;
 		let prompt_tokens_per_s = (stats.prompt_tokens as f64) / stats.feed_prompt_duration.as_secs_f64();
 		let predict_tokens_per_s = (stats.predict_tokens as f64) / stats.predict_duration.as_secs_f64();
@@ -91,11 +122,17 @@ impl BackendSession {
 				// Commit to memory in the background
 				let text = request.prompt.clone();
 				let memory = self.memory.clone().unwrap();
-				tokio::spawn(async move {
-					let mut memory = memory.lock().await;
-					memory.store(&text, &embedding.embedding).await.unwrap();
-					tracing::debug!("committed to memory: {text}");
-				});
+
+				let handle = tokio::runtime::Handle::current();
+				let _guard = handle.enter();
+				handle
+					.block_on(tokio::spawn(async move {
+						let mut memory = memory.lock().await;
+						memory.store(&text, &embedding.embedding).await?;
+						tracing::debug!("committed to memory: {text}");
+						Ok::<(), GenerateError>(())
+					}))
+					.unwrap()?;
 			}
 		}
 
@@ -117,9 +154,14 @@ impl BackendSession {
 		);
 		let mut tokens = vec![];
 
+		// Append reminder tokens
+		if let Some(reminder_prompt) = self.reminder_prompt(request)? {
+			tokens.append(&mut Prompt::Text(&reminder_prompt).to_tokens(self.model.tokenizer(), beginning_of_sentence && tokens.is_empty())?)
+		}
+
 		// Append prefix tokens
 		if let Some(ref prefix) = self.task_config.prefix {
-			tokens.append(&mut Prompt::Text(prefix).to_tokens(self.model.tokenizer(), beginning_of_sentence)?);
+			tokens.append(&mut Prompt::Text(prefix).to_tokens(self.model.tokenizer(), beginning_of_sentence && tokens.is_empty())?);
 		}
 
 		// Generate user prompt tokens
