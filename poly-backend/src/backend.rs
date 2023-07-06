@@ -22,6 +22,8 @@ pub use llm::{InferenceFeedback, InferenceResponse};
 
 use crate::{
 	config::{BackendConfig, BiaserConfig, TaskConfig},
+	memory::hora::HoraMemory,
+	memory::Memory,
 	sequence::{Sequence, SequenceSet},
 	stats::{InferenceStatsAdd, TaskStats},
 	types::{EmbeddingResponse, GenerateError, PromptRequest, SessionRequest},
@@ -36,6 +38,7 @@ pub struct BackendStats {
 pub struct Backend {
 	pub config: BackendConfig,
 	pub models: HashMap<String, Arc<Box<dyn llm::Model>>>,
+	pub memories: HashMap<String, Arc<Box<Mutex<dyn Memory>>>>,
 	pub stats: Arc<BackendStats>,
 }
 
@@ -364,7 +367,15 @@ impl Backend {
 			config,
 			models: HashMap::new(),
 			stats: Arc::new(BackendStats::default()),
+			memories: HashMap::new(),
 		};
+
+		// Load memories
+		for (memory_name, memory_config) in backend.config.memory.iter() {
+			info!("Loading memory {memory_name}");
+			let mem = HoraMemory::new(&memory_config.path, memory_config.dimensions).unwrap();
+			backend.memories.insert(memory_name.clone(), Arc::new(Box::new(Mutex::new(mem))));
+		}
 
 		// Load models
 		let n_models = backend.config.models.len();

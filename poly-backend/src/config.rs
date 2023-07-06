@@ -20,6 +20,15 @@ where
 }
 
 #[derive(Deserialize, Debug, Clone)]
+pub struct MemoryConfig {
+	/// Path to the memory file
+	pub path: PathBuf,
+
+	/// Number of dimensions for embedding vectors
+	pub dimensions: usize,
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct ModelConfig {
 	/// The model architecture type
 	#[serde(deserialize_with = "architecture_from_str")]
@@ -160,4 +169,7 @@ pub struct BackendConfig {
 
 	/// Tasks that are made available
 	pub tasks: HashMap<String, TaskConfig>,
+
+	/// Memories
+	pub memory: HashMap<String, MemoryConfig>,
 }
