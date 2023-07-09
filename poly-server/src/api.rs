@@ -7,9 +7,11 @@ use poly_backend::types::GenerateError as OriginalGenerateError;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct JwtClaims {
-	pub exp: Option<usize>,         // Expiry time
-	pub sub: Option<String>,        // User identifier (currently only used for logging)
-	pub tasks: Option<Vec<String>>, // Optional list of tasks this token is allowed to use
+	pub exp: Option<usize>,            // Expiry time
+	pub sub: Option<String>,           // User identifier (currently only used for logging)
+	pub tasks: Option<Vec<String>>,    // Optional list of tasks this token is allowed to use
+	pub models: Option<Vec<String>>,   // Optional list of models this token is allowed to use
+	pub memories: Option<Vec<String>>, // Optional list of memories this token is allowed to use
 }
 
 #[derive(Deserialize, Clone, Debug)]

@@ -186,5 +186,5 @@ pub struct BackendConfig {
 	pub tasks: HashMap<String, TaskConfig>,
 
 	/// Memories
-	pub memory: HashMap<String, MemoryConfig>,
+	pub memories: HashMap<String, MemoryConfig>,
 }

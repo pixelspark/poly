@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
 use axum::{
-	extract::{Path, Query, State},
+	extract::{Query, State},
 	http::{header::AUTHORIZATION, Request, StatusCode},
 	middleware::Next,
 	response::IntoResponse,
-	Extension,
 };
 use jsonwebtoken::Validation;
 
@@ -21,29 +20,13 @@ pub struct Server {
 	pub config: Config,
 }
 
-/// Middleware that checks whether the user has access to a certain task.
-pub async fn authorize<T>(
-	Path(task_name): Path<String>,
-	Extension(claims): Extension<JwtClaims>,
-	req: Request<T>,
-	next: Next<T>,
-) -> Result<impl IntoResponse, StatusCode> {
-	if let Some(tasks) = &claims.tasks {
-		if !tasks.contains(&task_name) {
-			return Err(StatusCode::UNAUTHORIZED);
-		}
-	}
-
-	Ok(next.run(req).await)
-}
-
 /// Middleware that authenticates a user using static pre-shared API keys or a JWT
 pub async fn authenticate<T>(
 	State(state): State<Arc<Server>>,
 	Query(key): Query<KeyQuery>,
 	mut req: Request<T>,
 	next: Next<T>,
-) -> Result<impl IntoResponse, StatusCode> {
+) -> Result<impl IntoResponse, (StatusCode, &'static str)> {
 	// Obtain contents of the Authorization header
 	let auth_header = req
 		.headers()
@@ -56,7 +39,7 @@ pub async fn authenticate<T>(
 		Some(
 			auth_header
 				.strip_prefix("Bearer ")
-				.ok_or(StatusCode::UNAUTHORIZED)
+				.ok_or((StatusCode::UNAUTHORIZED, "invalid bearer token"))
 				.map(|x| x.to_string())?,
 		)
 	} else if key.api_key.as_ref().is_some_and(|s| !s.is_empty()) {
@@ -86,16 +69,16 @@ pub async fn authenticate<T>(
 					}
 					Err(e) => {
 						tracing::debug!("error validating JWT token: {e}");
-						return Err(StatusCode::UNAUTHORIZED);
+						return Err((StatusCode::UNAUTHORIZED, "invalid JWT token"));
 					}
 				}
 			} else {
-				return Err(StatusCode::UNAUTHORIZED);
+				return Err((StatusCode::UNAUTHORIZED, "no acceptable auth token provided"));
 			}
 		}
 		None => {
 			if !state.config.public {
-				return Err(StatusCode::UNAUTHORIZED);
+				return Err((StatusCode::UNAUTHORIZED, "no auth token provided and not a public server"));
 			}
 
 			// Unauthenticated but access granted

@@ -58,6 +58,11 @@ pub struct TasksResponse {
 }
 
 #[derive(Serialize)]
+pub struct MemoriesResponse {
+	pub memories: Vec<String>,
+}
+
+#[derive(Serialize)]
 pub struct GenerateResponse {
 	pub text: String,
 }

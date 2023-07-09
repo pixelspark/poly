@@ -101,7 +101,7 @@ impl BackendSession {
 		callback: impl FnMut(InferenceResponse) -> Result<InferenceFeedback, GenerateError>,
 	) -> Result<InferenceStats, GenerateError> {
 		// Perform inference
-		let stats = self.complete_actual(&request, callback)?;
+		let stats = self.complete_actual(request, callback)?;
 		let prompt_tokens_per_s = (stats.prompt_tokens as f64) / stats.feed_prompt_duration.as_secs_f64();
 		let predict_tokens_per_s = (stats.predict_tokens as f64) / stats.predict_duration.as_secs_f64();
 
@@ -435,7 +435,7 @@ impl Backend {
 		};
 
 		// Load memories
-		for (memory_name, memory_config) in backend.config.memory.iter() {
+		for (memory_name, memory_config) in backend.config.memories.iter() {
 			info!("Loading memory {memory_name}");
 			let mem = HoraMemory::new(&memory_config.path, memory_config.dimensions).unwrap();
 			backend
@@ -558,10 +558,7 @@ impl Backend {
 
 		let task_config = self.config.tasks.get(task_name).unwrap();
 
-		let memory = match &task_config.memorization {
-			Some(mc) => Some(self.memories.get(&mc.memory).clone().unwrap()),
-			None => None,
-		};
+		let memory = task_config.memorization.as_ref().map(|mc| self.memories.get(&mc.memory).unwrap());
 
 		let model = self.models.get(&task_config.model).unwrap();
 		let inference_config = InferenceSessionConfig {

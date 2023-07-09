@@ -14,6 +14,7 @@ pub trait Memory: Send {
 }
 
 pub mod hora {
+	use std::path::Path;
 	use std::path::PathBuf;
 
 	use crate::memory::{Memory, MemoryError};
@@ -29,7 +30,7 @@ pub mod hora {
 	}
 
 	impl HoraMemory {
-		pub fn new(path: &PathBuf, dims: usize) -> Result<HoraMemory, MemoryError> {
+		pub fn new(path: &Path, dims: usize) -> Result<HoraMemory, MemoryError> {
 			let index = if path.exists() {
 				HNSWIndex::<f32, String>::load(path.to_str().unwrap()).unwrap()
 			} else {
@@ -40,7 +41,10 @@ pub mod hora {
 				return Err(MemoryError::DimensionalityMismatch);
 			}
 
-			Ok(HoraMemory { index, path: path.clone() })
+			Ok(HoraMemory {
+				index,
+				path: path.to_path_buf(),
+			})
 		}
 	}
 
@@ -69,12 +73,14 @@ pub mod hora {
 
 	#[cfg(test)]
 	mod test {
+		use std::path::PathBuf;
+
 		use super::HoraMemory;
 		use crate::memory::Memory;
 
 		#[tokio::test]
 		pub async fn test_store() {
-			let mut hm = HoraMemory::new(3);
+			let mut hm = HoraMemory::new(&PathBuf::default(), 3).unwrap();
 			hm.store("foo", &[1.0, 2.0, 3.0]).await.unwrap();
 			hm.store("bar", &[-1.0, 2.0, 3.0]).await.unwrap();
 			hm.store("baz", &[1.0, -2.0, 3.0]).await.unwrap();

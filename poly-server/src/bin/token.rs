@@ -16,6 +16,14 @@ pub struct Args {
 	#[arg(long, short = 't')]
 	pub tasks: Option<Vec<String>>,
 
+	/// When supplied, list of models that this token can use
+	#[arg(long, short = 'm')]
+	pub models: Option<Vec<String>>,
+
+	/// When supplied, list of memories that this token can use
+	#[arg(long, short = 'n')]
+	pub memories: Option<Vec<String>>,
+
 	/// User ID (`sub` claim) in token
 	#[arg(long, short = 's')]
 	pub sub: Option<String>,
@@ -39,6 +47,8 @@ pub fn main() {
 					exp: Some(get_current_timestamp() as usize + 3600),
 					sub: args.sub,
 					tasks: args.tasks,
+					models: args.models,
+					memories: args.memories,
 				},
 				&ek,
 			)
