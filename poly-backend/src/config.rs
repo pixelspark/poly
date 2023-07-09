@@ -26,6 +26,9 @@ pub struct MemoryConfig {
 
 	/// Number of dimensions for embedding vectors
 	pub dimensions: usize,
+
+	/// Model to use for embedding
+	pub embedding_model: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]

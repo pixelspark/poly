@@ -13,7 +13,7 @@ cublas = ["llm/cublas"]
 
 [dependencies]
 async-stream = "0.3.5"
-axum = {version = "0.6.18", features = ["ws"]}
+axum = {version = "0.6.18", features = ["ws", "macros"]}
 clap = { version = "4.3.0", features = ["derive"] }
 futures-util = "0.3.28"
 llm = { workspace = true }
@@ -31,3 +31,4 @@ tracing-test = "0.2.4"
 poly-bias = "0.1.0"
 poly-backend = "0.1.0"
 jsonwebtoken = "8.3.0"
+hyper = "0.14.27"

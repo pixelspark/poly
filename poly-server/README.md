@@ -39,6 +39,12 @@ To generate embeddings:
 curl -XPOST --url http://localhost:3000/v1/task/pythia/embedding --header 'Content-type: application/json' --data '{"prompt": "Hello "}' -vvv
 ```
 
+#### Memories
+
+```sh
+curl -XPOST "http://localhost:3000/v1/memory/test?api_key=foo" -vvvv -d "Hello, world"
+```
+
 ### With CUDA
 
 From the root of the repository:

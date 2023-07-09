@@ -38,13 +38,13 @@ pub struct BackendStats {
 pub struct Backend {
 	pub config: BackendConfig,
 	pub models: HashMap<String, Arc<Box<dyn llm::Model>>>,
-	pub memories: HashMap<String, Arc<Box<tokio::sync::Mutex<dyn Memory>>>>,
+	pub memories: HashMap<String, Arc<Box<dyn Memory>>>,
 	pub stats: Arc<BackendStats>,
 }
 
 pub struct BackendSession {
 	model: Arc<Box<dyn llm::Model>>,
-	memory: Option<Arc<Box<tokio::sync::Mutex<dyn Memory>>>>,
+	memory: Option<Arc<Box<dyn Memory>>>,
 	session: llm::InferenceSession,
 	inference_parameters: InferenceParameters,
 	task_config: TaskConfig,
@@ -78,7 +78,6 @@ impl BackendSession {
 					let memory = self.memory.clone().unwrap();
 					let reminder_prompt = handle
 						.block_on(tokio::spawn(async move {
-							let memory = memory.lock().await;
 							let rm = memory.get(&embedding.embedding, retrieve);
 							let remembered = rm.await?;
 							tracing::debug!("retrieved from memory: {remembered:?}");
@@ -127,7 +126,6 @@ impl BackendSession {
 				let _guard = handle.enter();
 				handle
 					.block_on(tokio::spawn(async move {
-						let mut memory = memory.lock().await;
 						memory.store(&text, &embedding.embedding).await?;
 						tracing::debug!("committed to memory: {text}");
 						Ok::<(), GenerateError>(())
@@ -434,15 +432,6 @@ impl Backend {
 			memories: HashMap::new(),
 		};
 
-		// Load memories
-		for (memory_name, memory_config) in backend.config.memories.iter() {
-			info!("Loading memory {memory_name}");
-			let mem = HoraMemory::new(&memory_config.path, memory_config.dimensions).unwrap();
-			backend
-				.memories
-				.insert(memory_name.clone(), Arc::new(Box::new(tokio::sync::Mutex::new(mem))));
-		}
-
 		// Load models
 		let n_models = backend.config.models.len();
 		for (index, (model_name, model_config)) in backend.config.models.iter().enumerate() {
@@ -482,6 +471,16 @@ impl Backend {
 		}
 
 		info!("All models loaded");
+
+		// Load memories
+		for (memory_name, memory_config) in backend.config.memories.iter() {
+			info!("Loading memory {memory_name}");
+			if !backend.models.contains_key(&memory_config.embedding_model) {
+				panic!("embedding model {} not found for memory {}", memory_config.embedding_model, memory_name);
+			}
+			let mem = HoraMemory::new(&memory_config.path, memory_config.dimensions).unwrap();
+			backend.memories.insert(memory_name.clone(), Arc::new(Box::new(mem)));
+		}
 
 		// Verify tasks
 		for (task_name, task_config) in &backend.config.tasks {
@@ -537,15 +536,25 @@ impl Backend {
 		})
 	}
 
-	pub async fn memorize(&self, task_name: &str, data: &str) -> Result<(), GenerateError> {
-		// Memorization
-		let task_config = &self.config.tasks[task_name];
-		if let Some(memorization) = &task_config.memorization {
-			let memory = self.memories[&memorization.memory].clone();
-			let embedding = self.embedding(&task_config.model, &PromptRequest { prompt: data.to_string() })?;
-			let mut memory: tokio::sync::MutexGuard<'_, dyn Memory> = memory.lock().await;
-			memory.store(data, &embedding.embedding).await?;
+	pub async fn recall(&self, memory_name: &str, prompt: &str, top_n: usize) -> Result<Vec<String>, GenerateError> {
+		if !self.memories.contains_key(memory_name) {
+			return Err(GenerateError::MemoryNotFound(memory_name.to_string()));
 		}
+
+		let memory_config = &self.config.memories[memory_name];
+
+		// Generate embedding for prompt
+		let embedding = self.embedding(&memory_config.embedding_model, &PromptRequest { prompt: prompt.to_string() })?;
+		let memory = self.memories.get(memory_name).unwrap();
+		memory.get(&embedding.embedding, top_n).await.map_err(GenerateError::Memory)
+	}
+
+	pub async fn memorize(&self, memory_name: &str, data: &str) -> Result<(), GenerateError> {
+		// Memorization
+		let memory_config = &self.config.memories[memory_name];
+		let memory = self.memories[memory_name].clone();
+		let embedding = self.embedding(&memory_config.embedding_model, &PromptRequest { prompt: data.to_string() })?;
+		memory.store(data, &embedding.embedding).await?;
 		Ok(())
 	}
 

@@ -37,10 +37,12 @@ pub struct GenerateError(OriginalGenerateError);
 impl GenerateError {
 	fn status_code(&self) -> StatusCode {
 		match self.0 {
-			OriginalGenerateError::TaskNotFound(_) | OriginalGenerateError::ModelNotFound(_) => StatusCode::NOT_FOUND,
+			OriginalGenerateError::TaskNotFound(_) | OriginalGenerateError::ModelNotFound(_) | OriginalGenerateError::MemoryNotFound(_) => {
+				StatusCode::NOT_FOUND
+			}
 			OriginalGenerateError::InferenceError(_) | OriginalGenerateError::TokenizationError(_) => StatusCode::INTERNAL_SERVER_ERROR,
 			OriginalGenerateError::Memory(_) => StatusCode::INTERNAL_SERVER_ERROR,
-			OriginalGenerateError::IllegalToken => StatusCode::BAD_REQUEST,
+			OriginalGenerateError::IllegalToken | OriginalGenerateError::InvalidDocument => StatusCode::BAD_REQUEST,
 		}
 	}
 }

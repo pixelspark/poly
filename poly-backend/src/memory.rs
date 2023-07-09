@@ -8,8 +8,8 @@ pub enum MemoryError {
 }
 
 #[async_trait]
-pub trait Memory: Send {
-	async fn store(&mut self, text: &str, embedding: &[f32]) -> Result<(), MemoryError>;
+pub trait Memory: Send + Sync {
+	async fn store(&self, text: &str, embedding: &[f32]) -> Result<(), MemoryError>;
 	async fn get(&self, embedding: &[f32], top_n: usize) -> Result<Vec<String>, MemoryError>;
 }
 
@@ -23,10 +23,11 @@ pub mod hora {
 	use hora::core::ann_index::SerializableIndex;
 	use hora::index::hnsw_idx::HNSWIndex;
 	use hora::index::hnsw_params::HNSWParams;
+	use tokio::sync::Mutex;
 
 	pub struct HoraMemory {
 		path: PathBuf,
-		index: HNSWIndex<f32, String>,
+		index: Mutex<HNSWIndex<f32, String>>,
 	}
 
 	impl HoraMemory {
@@ -42,7 +43,7 @@ pub mod hora {
 			}
 
 			Ok(HoraMemory {
-				index,
+				index: Mutex::new(index),
 				path: path.to_path_buf(),
 			})
 		}
@@ -50,24 +51,26 @@ pub mod hora {
 
 	impl Drop for HoraMemory {
 		fn drop(&mut self) {
-			self.index.dump(self.path.to_str().unwrap()).unwrap();
+			self.index.blocking_lock().dump(self.path.to_str().unwrap()).unwrap();
 		}
 	}
 
 	#[async_trait]
 	impl Memory for HoraMemory {
-		async fn store(&mut self, text: &str, embedding: &[f32]) -> Result<(), MemoryError> {
-			assert_eq!(embedding.len(), self.index.dimension());
+		async fn store(&self, text: &str, embedding: &[f32]) -> Result<(), MemoryError> {
+			let mut index = self.index.lock().await;
+			assert_eq!(embedding.len(), index.dimension());
 			// TODO: error handling
-			self.index.add(embedding, text.to_string()).unwrap();
-			self.index.build(hora::core::metrics::Metric::Euclidean).unwrap();
-			self.index.dump(self.path.to_str().unwrap()).unwrap();
+			index.add(embedding, text.to_string()).unwrap();
+			index.build(hora::core::metrics::Metric::Euclidean).unwrap();
+			index.dump(self.path.to_str().unwrap()).unwrap();
 			Ok(())
 		}
 
 		async fn get(&self, embedding: &[f32], top_n: usize) -> Result<Vec<String>, MemoryError> {
-			assert_eq!(embedding.len(), self.index.dimension());
-			Ok(self.index.search(embedding, top_n))
+			let index = self.index.lock().await;
+			assert_eq!(embedding.len(), index.dimension());
+			Ok(index.search(embedding, top_n))
 		}
 	}
 
@@ -80,7 +83,7 @@ pub mod hora {
 
 		#[tokio::test]
 		pub async fn test_store() {
-			let mut hm = HoraMemory::new(&PathBuf::default(), 3).unwrap();
+			let hm = HoraMemory::new(&PathBuf::default(), 3).unwrap();
 			hm.store("foo", &[1.0, 2.0, 3.0]).await.unwrap();
 			hm.store("bar", &[-1.0, 2.0, 3.0]).await.unwrap();
 			hm.store("baz", &[1.0, -2.0, 3.0]).await.unwrap();

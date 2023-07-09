@@ -98,6 +98,12 @@ pub enum GenerateError {
 
 	#[error("memory error: {0}")]
 	Memory(#[from] MemoryError),
+
+	#[error("memory not found: {0}")]
+	MemoryNotFound(String),
+
+	#[error("invalid document supplied")]
+	InvalidDocument,
 }
 
 impl From<InferenceError> for GenerateError {
