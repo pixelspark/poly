@@ -13,7 +13,7 @@ cublas = ["llm/cublas"]
 
 [dependencies]
 async-stream = "0.3.5"
-axum = {version = "0.6.18", features = ["ws", "macros"]}
+axum = {version = "0.6.18", features = ["ws"]}
 clap = { version = "4.3.0", features = ["derive"] }
 futures-util = "0.3.28"
 llm = { workspace = true }
