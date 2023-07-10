@@ -14,11 +14,13 @@
         <option value="task">Task</option>
         <option value="embedding">Embedding</option>
         <option value="chat">Chat</option>
+        <option value="memory">Memory</option>
       </select>
 
       <Task v-if="screen === 'task'"></Task>
       <Embedding v-else-if="screen === 'embedding'"></Embedding>
       <Chat v-else-if="screen === 'chat'"></Chat>
+      <Memory v-else-if="screen === 'memory'"></Memory>
     </template>
   </div>
 </template>
@@ -28,6 +30,7 @@ import { onMounted, provide, ref, watch } from "vue";
 import Task from "./components/Task.vue";
 import Embedding from "./components/Embedding.vue";
 import Chat from "./components/Chat.vue";
+import Memory from "./components/Memory.vue";
 
 const screen = ref("chat");
 
