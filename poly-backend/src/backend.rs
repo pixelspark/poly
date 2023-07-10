@@ -3,11 +3,15 @@ use std::{
 	sync::{Arc, Mutex},
 };
 
-use llm::{samplers::TopPTopK, InferenceParameters, InferenceSessionConfig, InferenceStats, ModelParameters, OutputRequest, Prompt, TokenizerSource};
+use llm::{
+	samplers::TopPTopK, InferenceParameters, InferenceSessionConfig, InferenceStats, Model, ModelParameters, OutputRequest, Prompt, TokenId,
+	TokenizerSource,
+};
 pub use llm::{InferenceFeedback, InferenceResponse};
+use tokio::task::spawn_blocking;
 
 use crate::{
-	config::{BackendConfig, MemoryConfig, MemoryTypeConfig},
+	config::{BackendConfig, MemoryConfig, MemoryStoreConfig, ModelConfig},
 	memory::hora::HoraMemory,
 	memory::{Memory, MemoryError},
 	session::BackendSession,
@@ -83,7 +87,7 @@ impl Backend {
 			if !backend.models.contains_key(&memory_config.embedding_model) {
 				panic!("embedding model {} not found for memory {}", memory_config.embedding_model, memory_name);
 			}
-			let mem = memory_config.r#type.from(memory_config).expect("memory construction");
+			let mem = memory_config.store.from(memory_config).expect("memory construction");
 			backend.memories.insert(memory_name.clone(), Arc::new(mem));
 		}
 
@@ -155,11 +159,96 @@ impl Backend {
 	}
 
 	pub async fn memorize(&self, memory_name: &str, data: &str) -> Result<(), GenerateError> {
-		// Memorization
+		// Obtain memorization configuration
 		let memory_config = &self.config.memories[memory_name];
 		let memory = self.memories[memory_name].clone();
-		let embedding = self.embedding(&memory_config.embedding_model, &PromptRequest { prompt: data.to_string() })?;
-		memory.store(data, &embedding.embedding).await?;
+		let model_name = &memory_config.embedding_model;
+
+		// Get embedding model
+		if !self.models.contains_key(model_name) {
+			return Err(GenerateError::ModelNotFound(model_name.to_string()));
+		};
+
+		let model = self.models.get(model_name).unwrap().clone();
+		let model_config = self.config.models[model_name].clone();
+
+		// Split the input by all separator
+		let vocab = model.tokenizer();
+		let mut splits = vec![data];
+		for splitter in &memory_config.chunk_separators {
+			splits = splits.into_iter().flat_map(|s| s.split_inclusive(splitter)).collect();
+		}
+
+		let mut current_chunk = vec![];
+		let mut current_chunk_text = String::new();
+		let mut first = true;
+		for split in splits {
+			let split_tokens: Vec<(Vec<u8>, TokenId)> = vocab.tokenize(split, first).map_err(GenerateError::TokenizationError)?;
+
+			// If this split exceeds the limits by itself, just chop it up until it fits
+			for tokens in split_tokens.chunks(memory_config.chunk_max_tokens) {
+				// Fill 'current_chunk' up to the max amount
+				if tokens.len() + current_chunk.len() > memory_config.chunk_max_tokens {
+					// This chunk is finished, commit to memory
+					let model = model.clone();
+					let memory = memory.clone();
+
+					let current_chunk_to_store: Vec<u32> = std::mem::take(&mut current_chunk);
+					let current_chunk_text_to_store: String = std::mem::take(&mut current_chunk_text);
+					Self::memorize_chunk(model, &model_config, &current_chunk_text_to_store, current_chunk_to_store, memory).await?;
+
+					current_chunk_text.clear();
+				}
+
+				current_chunk.extend(tokens.iter().map(|x| x.1));
+				let tokens_bytes: Vec<u8> = tokens.iter().flat_map(|t| t.0.clone()).collect();
+				let tokens_text = String::from_utf8_lossy(&tokens_bytes);
+				current_chunk_text.push_str(&tokens_text);
+				first = false;
+			}
+		}
+
+		if !current_chunk.is_empty() {
+			Self::memorize_chunk(model, &model_config, &current_chunk_text, current_chunk, memory).await?;
+		}
+
+		Ok(())
+	}
+
+	async fn memorize_chunk(
+		model: Arc<Box<dyn Model>>,
+		model_config: &ModelConfig,
+		text: &str,
+		tokens: Vec<TokenId>,
+		memory: Arc<Box<dyn Memory>>,
+	) -> Result<(), MemoryError> {
+		// Calculate embedding
+		tracing::debug!(n_tokens = tokens.len(), ?text, "memorize chunk");
+
+		let inference_config = InferenceSessionConfig {
+			use_gpu: model_config.use_gpu,
+			..InferenceSessionConfig::default()
+		};
+
+		let mut session = model.start_session(inference_config);
+		let inference_parameters: InferenceParameters = InferenceParameters {
+			n_threads: model_config.threads_per_session,
+			n_batch: 8,
+			sampler: Arc::new(TopPTopK::default()),
+		};
+
+		let embeddings = spawn_blocking(move || {
+			let mut output_request = OutputRequest {
+				embeddings: Some(Vec::new()),
+				all_logits: None,
+			};
+			model.evaluate(&mut session, &inference_parameters, &tokens, &mut output_request);
+			output_request.embeddings.unwrap()
+		})
+		.await
+		.unwrap();
+
+		memory.store(text, &embeddings).await?;
 		Ok(())
 	}
 
@@ -234,7 +323,7 @@ impl Default for BackendStats {
 	}
 }
 
-impl MemoryTypeConfig {
+impl MemoryStoreConfig {
 	pub fn from(&self, memory_config: &MemoryConfig) -> Result<Box<dyn Memory>, MemoryError> {
 		match self {
 			Self::Hora { path } => Ok(Box::new(HoraMemory::new(path, memory_config.dimensions)?)),

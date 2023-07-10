@@ -27,7 +27,9 @@ threads_per_session = 8
 [memories.test]
 embedding_model = "orcamini3b"
 dimensions = 3200
-type = { hora = { path = "test.index" } }
+store = { hora = { path = "test.index" } }
+chunk_separators = ["."]
+chunk_max_tokens = 255
 
 [tasks.pythia]
 model = "pythia160m"

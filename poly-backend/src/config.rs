@@ -21,7 +21,7 @@ where
 
 #[derive(Deserialize, Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum MemoryTypeConfig {
+pub enum MemoryStoreConfig {
 	Hora {
 		/// Path to the memory file
 		path: PathBuf,
@@ -31,13 +31,21 @@ pub enum MemoryTypeConfig {
 #[derive(Deserialize, Debug, Clone, Serialize)]
 pub struct MemoryConfig {
 	/// The type of memory to be constructed
-	pub r#type: MemoryTypeConfig,
+	pub store: MemoryStoreConfig,
 
 	/// Number of dimensions for embedding vectors
 	pub dimensions: usize,
 
 	/// Model to use for embedding
 	pub embedding_model: String,
+
+	/// Separators to use while chunking
+	#[serde(default = "default_chunk_separators")]
+	pub chunk_separators: Vec<String>,
+
+	/// Maximum length for a chunk (in tokens)
+	#[serde(default = "default_chunk_max_tokens")]
+	pub chunk_max_tokens: usize,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -72,6 +80,14 @@ const fn default_threads_per_session() -> usize {
 
 const fn default_context_size() -> usize {
 	512
+}
+
+const fn default_chunk_max_tokens() -> usize {
+	255
+}
+
+fn default_chunk_separators() -> Vec<String> {
+	vec![String::from(" ")]
 }
 
 #[derive(Deserialize, Debug, Clone)]
