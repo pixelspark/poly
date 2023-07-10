@@ -27,7 +27,7 @@ threads_per_session = 8
 [memories.test]
 embedding_model = "orcamini3b"
 dimensions = 3200
-path = "test.index"
+type = { hora = { path = "test.index" } }
 
 [tasks.pythia]
 model = "pythia160m"
