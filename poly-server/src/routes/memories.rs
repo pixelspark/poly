@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::{
-	extract::{Path, Query, RawBody, State},
+	extract::{Path, Query, State},
 	http::{Request, StatusCode},
 	middleware::Next,
 	response::IntoResponse,
@@ -13,17 +13,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
 	api::{GenerateError, JwtClaims},
-	middleware::Server,
+	middleware::{Plaintext, Server},
 };
 
 pub fn router() -> Router<Arc<Server>, axum::body::Body> {
 	Router::new().route("/", get(memories_handler)).nest(
 		"/:memory",
 		Router::new()
-			// 		.route("/chat", get(ws_task_handler))
-			// 		.route("/status", get(status_with_user_handler))
-			// 		.route("/live", get(sse_task_handler))
-			// 		.route("/completion", post(post_task_completion_handler))
 			.route("/", get(get_memory_recall_handler))
 			.route("/", post(post_memory_remember_handler))
 			.layer(axum::middleware::from_fn(authorize)),
@@ -53,14 +49,9 @@ pub struct RememberResponse {}
 async fn post_memory_remember_handler(
 	State(state): State<Arc<Server>>,
 	Path(memory_name): Path<String>,
-	RawBody(body): RawBody,
+	Plaintext(body): Plaintext,
 ) -> Result<Json<RememberResponse>, GenerateError> {
-	let Ok(bytes) = hyper::body::to_bytes(body).await else {
-		return Err(poly_backend::types::GenerateError::InvalidDocument.into());
-	};
-
-	let data = std::str::from_utf8(&bytes).map_err(|_| poly_backend::types::GenerateError::InvalidDocument)?;
-	state.backend.memorize(&memory_name, data).await?;
+	state.backend.memorize(&memory_name, &body).await?;
 	Ok(Json(RememberResponse {}))
 }
 

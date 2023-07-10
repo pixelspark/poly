@@ -83,7 +83,7 @@ impl Backend {
 			if !backend.models.contains_key(&memory_config.embedding_model) {
 				panic!("embedding model {} not found for memory {}", memory_config.embedding_model, memory_name);
 			}
-			let mem = memory_config.r#type.new(&memory_config).expect("memory construction");
+			let mem = memory_config.r#type.from(memory_config).expect("memory construction");
 			backend.memories.insert(memory_name.clone(), Arc::new(mem));
 		}
 
@@ -235,9 +235,9 @@ impl Default for BackendStats {
 }
 
 impl MemoryTypeConfig {
-	pub fn new(&self, memory_config: &MemoryConfig) -> Result<Box<dyn Memory>, MemoryError> {
+	pub fn from(&self, memory_config: &MemoryConfig) -> Result<Box<dyn Memory>, MemoryError> {
 		match self {
-			Self::Hora { path } => Ok(Box::new(HoraMemory::new(&path, memory_config.dimensions)?)),
+			Self::Hora { path } => Ok(Box::new(HoraMemory::new(path, memory_config.dimensions)?)),
 		}
 	}
 }
