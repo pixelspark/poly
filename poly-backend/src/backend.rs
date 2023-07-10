@@ -21,9 +21,9 @@ use poly_bias::{
 pub use llm::{InferenceFeedback, InferenceResponse};
 
 use crate::{
-	config::{BackendConfig, BiaserConfig, TaskConfig},
+	config::{BackendConfig, BiaserConfig, MemoryConfig, MemoryTypeConfig, TaskConfig},
 	memory::hora::HoraMemory,
-	memory::Memory,
+	memory::{Memory, MemoryError},
 	sequence::{Sequence, SequenceSet},
 	stats::{InferenceStatsAdd, TaskStats},
 	types::{EmbeddingResponse, GenerateError, PromptRequest, SessionRequest},
@@ -423,6 +423,14 @@ impl Default for BackendStats {
 	}
 }
 
+impl MemoryTypeConfig {
+	pub fn new(&self, memory_config: &MemoryConfig) -> Result<Box<dyn Memory>, MemoryError> {
+		match self {
+			Self::Hora { path } => Ok(Box::new(HoraMemory::new(&path, memory_config.dimensions)?)),
+		}
+	}
+}
+
 impl Backend {
 	pub fn from(config: BackendConfig, mut load_progress: impl FnMut(f64)) -> Backend {
 		let mut backend = Backend {
@@ -478,8 +486,8 @@ impl Backend {
 			if !backend.models.contains_key(&memory_config.embedding_model) {
 				panic!("embedding model {} not found for memory {}", memory_config.embedding_model, memory_name);
 			}
-			let mem = HoraMemory::new(&memory_config.path, memory_config.dimensions).unwrap();
-			backend.memories.insert(memory_name.clone(), Arc::new(Box::new(mem)));
+			let mem = memory_config.r#type.new(&memory_config).expect("memory construction");
+			backend.memories.insert(memory_name.clone(), Arc::new(mem));
 		}
 
 		// Verify tasks

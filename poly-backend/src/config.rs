@@ -1,6 +1,6 @@
 pub use llm::ModelArchitecture;
 use poly_bias::json::JsonSchema;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 
 fn architecture_from_str<'de, D>(deserializer: D) -> Result<ModelArchitecture, D::Error>
@@ -19,10 +19,19 @@ where
 	}
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryTypeConfig {
+	Hora {
+		/// Path to the memory file
+		path: PathBuf,
+	},
+}
+
+#[derive(Deserialize, Debug, Clone, Serialize)]
 pub struct MemoryConfig {
-	/// Path to the memory file
-	pub path: PathBuf,
+	/// The type of memory to be constructed
+	pub r#type: MemoryTypeConfig,
 
 	/// Number of dimensions for embedding vectors
 	pub dimensions: usize,
@@ -68,7 +77,10 @@ const fn default_context_size() -> usize {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum BiaserConfig {
+	/// Configure Biaser from JSON schema included directly in the configuration
 	JsonSchema(JsonSchema),
+
+	/// Configure Biaser using an external file containing a JSON schema (in JSON)
 	JsonSchemaFile(PathBuf),
 }
 
