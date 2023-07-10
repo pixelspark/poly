@@ -68,7 +68,7 @@ async function reload() {
 }
 
 async function storeFile(mime: string, body: string | File) {
-  if (memory.value && prompt.value && !storing.value) {
+  if (memory.value && !storing.value) {
     storing.value = true;
     const headers: Record<string, any> = {
       "Content-type": mime,
@@ -91,7 +91,9 @@ async function storeFile(mime: string, body: string | File) {
 }
 
 async function store() {
-  return await storeFile("text/plain", prompt.value);
+  if (prompt.value) {
+    return await storeFile("text/plain", prompt.value);
+  }
 }
 
 async function retrieve() {

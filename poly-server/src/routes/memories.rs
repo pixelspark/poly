@@ -9,11 +9,12 @@ use axum::{
 	Extension, Json, Router,
 };
 use poly_backend::types::MemoriesResponse;
+use poly_extract::middleware::Plaintext;
 use serde::{Deserialize, Serialize};
 
 use crate::{
 	api::{GenerateError, JwtClaims},
-	middleware::{Plaintext, Server},
+	middleware::Server,
 };
 
 pub fn router() -> Router<Arc<Server>, axum::body::Body> {
