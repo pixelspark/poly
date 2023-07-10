@@ -2,6 +2,7 @@
 [workspace]
 resolver= "2"
 members = [
+	"poly-extract",
 	"poly-server",
 	"poly-bias",
 	"poly-ui",
@@ -14,3 +15,4 @@ llm = { git = "https://github.com/rustformers/llm.git", default-features = false
 [patch.crates-io]
 poly-bias = { path = "./poly-bias" }
 poly-backend = { path = "./poly-backend" }
+poly-extract = { path = "./poly-extract" }

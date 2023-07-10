@@ -1,0 +1,8 @@
+[package]
+name = "poly-extract"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+minidom = "0.15.2"
+zip = "0.6.6"

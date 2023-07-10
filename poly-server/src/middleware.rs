@@ -118,6 +118,21 @@ where
 						.map_err(|_| StatusCode::UNPROCESSABLE_ENTITY.into_response())?
 						.to_string(),
 				));
+			} else if content_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" {
+				let Ok(bytes) = hyper::body::to_bytes(req.body_mut()).await else {
+					return Err(StatusCode::UNPROCESSABLE_ENTITY.into_response());
+				};
+				let text = tokio::task::spawn_blocking(|| {
+					let mut cur = std::io::Cursor::new(bytes);
+					poly_extract::docx::get_text_from_docx(&mut cur)
+				})
+				.await
+				.unwrap();
+
+				match text {
+					Some(text) => return Ok(Self(text)),
+					None => return Err(StatusCode::UNPROCESSABLE_ENTITY.into_response()),
+				}
 			} else {
 				tracing::warn!("invalid content type: {content_type}");
 			}
