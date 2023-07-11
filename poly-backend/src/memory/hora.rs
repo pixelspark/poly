@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::path::PathBuf;
 
 use crate::memory::{Memory, MemoryError};
@@ -10,15 +9,20 @@ use hora::index::hnsw_params::HNSWParams;
 use tokio::sync::Mutex;
 
 pub struct HoraMemory {
-	path: PathBuf,
+	path: Option<PathBuf>,
 	index: Mutex<HNSWIndex<f32, String>>,
 }
 
 impl HoraMemory {
-	pub fn new(path: &Path, dims: usize) -> Result<HoraMemory, MemoryError> {
-		let index = if path.exists() {
-			HNSWIndex::<f32, String>::load(path.to_str().unwrap()).unwrap()
+	pub fn new(path: Option<PathBuf>, dims: usize) -> Result<HoraMemory, MemoryError> {
+		let index = if let Some(ref path) = path {
+			if path.exists() {
+				HNSWIndex::<f32, String>::load(path.to_str().unwrap()).unwrap()
+			} else {
+				HNSWIndex::<f32, String>::new(dims, &HNSWParams::<f32>::default())
+			}
 		} else {
+			tracing::warn!("creating a memory store that is non-persistent");
 			HNSWIndex::<f32, String>::new(dims, &HNSWParams::<f32>::default())
 		};
 
@@ -28,14 +32,16 @@ impl HoraMemory {
 
 		Ok(HoraMemory {
 			index: Mutex::new(index),
-			path: path.to_path_buf(),
+			path,
 		})
 	}
 }
 
 impl Drop for HoraMemory {
 	fn drop(&mut self) {
-		self.index.blocking_lock().dump(self.path.to_str().unwrap()).unwrap();
+		if let Some(ref path) = self.path {
+			self.index.blocking_lock().dump(path.to_str().unwrap()).unwrap();
+		}
 	}
 }
 
@@ -47,7 +53,9 @@ impl Memory for HoraMemory {
 		// TODO: error handling
 		index.add(embedding, text.to_string()).unwrap();
 		index.build(hora::core::metrics::Metric::Euclidean).unwrap();
-		index.dump(self.path.to_str().unwrap()).unwrap();
+		if let Some(ref path) = self.path {
+			index.dump(path.to_str().unwrap()).unwrap();
+		}
 		Ok(())
 	}
 
@@ -60,14 +68,12 @@ impl Memory for HoraMemory {
 
 #[cfg(test)]
 mod test {
-	use std::path::PathBuf;
-
 	use super::HoraMemory;
 	use crate::memory::Memory;
 
 	#[tokio::test]
 	pub async fn test_store() {
-		let hm = HoraMemory::new(&PathBuf::default(), 3).unwrap();
+		let hm = HoraMemory::new(None, 3).unwrap();
 		hm.store("foo", &[1.0, 2.0, 3.0]).await.unwrap();
 		hm.store("bar", &[-1.0, 2.0, 3.0]).await.unwrap();
 		hm.store("baz", &[1.0, -2.0, 3.0]).await.unwrap();

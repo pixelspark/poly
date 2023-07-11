@@ -33,8 +33,8 @@ pub trait Memory: Send + Sync {
 #[serde(rename_all = "snake_case")]
 pub enum MemoryStoreConfig {
 	Hora {
-		/// Path to the memory file
-		path: PathBuf,
+		/// Path to the memory file (no path means not persisted)
+		path: Option<PathBuf>,
 	},
 
 	#[cfg(feature = "qdrant")]
@@ -56,7 +56,7 @@ fn default_qdrant_url() -> String {
 impl MemoryStoreConfig {
 	pub fn from(&self, memory_config: &MemoryConfig) -> Result<Box<dyn Memory>, MemoryError> {
 		match self {
-			Self::Hora { path } => Ok(Box::new(hora::HoraMemory::new(path, memory_config.dimensions)?)),
+			Self::Hora { path } => Ok(Box::new(hora::HoraMemory::new(path.clone(), memory_config.dimensions)?)),
 
 			#[cfg(feature = "qdrant")]
 			Self::Qdrant { url, collection } => Ok(Box::new(qdrant::QdrantMemory::new(url, collection, memory_config.dimensions)?)),
