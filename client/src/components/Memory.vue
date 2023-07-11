@@ -33,7 +33,7 @@
             Store
           </button>
           <button :disabled="!memory || storing" @click="upload">
-            Upload file...
+            Upload file(s)...
           </button>
         </dd>
       </dl>
@@ -106,17 +106,17 @@ async function retrieve() {
   }
 }
 
-async function selectFile(): Promise<File> {
+async function selectFile(): Promise<File[]> {
   return await new Promise((resolve, reject) => {
     const input = document.createElement("input");
     input.type = "file";
+    input.multiple = true;
     input.accept = ".pdf,.txt,.docx,text/plain";
 
     input.addEventListener("change", (evt: any) => {
       if (evt.target.files.length > 0) {
-        const file = evt.target.files[0];
-        console.log({ file });
-        resolve(file);
+        const files = evt.target.files;
+        resolve(files);
       } else {
         reject(new Error("no file selected"));
       }
@@ -126,9 +126,11 @@ async function selectFile(): Promise<File> {
 }
 
 async function upload() {
-  const file = await selectFile();
-  if (file) {
-    await storeFile(file.type, file);
+  const files = await selectFile();
+  if (files) {
+    for (const file of files) {
+      await storeFile(file.type, file);
+    }
   }
 }
 
