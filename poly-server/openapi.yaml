@@ -1,0 +1,303 @@
+openapi: '3.0.2'
+info:
+  title: Poly server
+  version: '1.0'
+servers:
+  - url: http://localhost:3000
+
+components:
+  schemas:
+    StatsResponse:
+      type: object
+      properties:
+        tasks:
+          type: object
+
+    MemoriesResponse:
+      type: object
+      properties:
+        tasks:
+          type: object
+          required:
+          - memories
+          properties:
+            memories:
+              type: array
+              items:
+                type: string
+
+
+    ModelsResponse:
+      type: object
+      properties:
+        tasks:
+          type: object
+          required:
+          - models
+          properties:
+            models:
+              type: array
+              items:
+                type: string
+
+    TasksResponse:
+      type: object
+      properties:
+        tasks:
+          type: object
+          required:
+          - tasks
+          properties:
+            tasks:
+              type: array
+              items:
+                type: string
+
+    RecallResponse:
+      type: object
+      properties:
+        tasks:
+          type: object
+          required:
+          - chunks
+          properties:
+            chunks:
+              type: array
+              items:
+                type: string
+
+    RememberResponse:
+      type: object
+
+    GenerateResponse:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+
+    EmbeddingResponse:
+      type: object
+      required:
+        - embedding
+      properties:
+        embedding:
+          type: array
+          items: 
+            type: number
+
+  responses:
+    statusResponse:
+      description: ''
+      content:
+        application/json:
+          schema: {"properties": {"status": {"type": "string", "enum": ["ok"]}}}
+paths:
+  /status:
+    get:
+      responses:
+        '200':
+            $ref: "#/components/responses/statusResponse"
+
+  /v1/model:
+    get:
+      responses:
+        '200':
+          description: List of models
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelsResponse"
+
+  /v1/model/{model}/embedding:
+    get:
+      parameters:
+      - name: model
+        required: true
+        in: path
+        schema:
+          type: string
+      - name: prompt
+        required: true
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Embedding response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbeddingResponse"
+    post:
+      parameters:
+      - name: model
+        required: true
+        in: path
+        schema:
+          type: string
+      requestBody:
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - prompt
+                properties:
+                  prompt:
+                    type: string
+      responses:
+        '200':
+          description: Embedding response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbeddingResponse"
+
+  /v1/task:
+    get:
+      responses:
+          '200':
+            description: List of tasks
+            content:
+              application/json:
+                schema:
+                  $ref: "#/components/schemas/TasksResponse"
+
+  /v1/memory:
+    get:
+      responses:
+        '200':
+          description: List of memories
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoriesResponse"
+
+  /v1/memory/{name}:
+    get:
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: prompt
+        required: true
+        in: query
+        schema:
+          type: string
+      - name: n
+        required: false
+        in: query
+        schema:
+          type: number
+      responses:
+        '200':
+          description: List of recalled items
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecallResponse"
+
+    put:
+      requestBody: 
+        content:
+          text/plain:
+            schema:
+              type: string
+          application/pdf:
+            schema:
+              type: string
+          application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: Store an item in memory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RememberResponse"
+
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - prompt
+              - n
+              properties:
+                prompt:
+                  type: string
+                n:
+                  type: number
+      responses:
+        '200':
+          description: List of recalled items
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecallResponse"
+
+
+  /v1/stats:
+    get:
+      responses: 
+        '200':
+          description: Statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatsResponse"
+
+  /v1/task/{task}/status:
+    parameters:
+    - name: task
+      in: path
+      required: true
+      schema:
+        type: string
+
+  /v1/task/{task}/chat:
+    parameters:
+    - name: task
+      in: path
+      required: true
+      schema:
+        type: string
+
+  /v1/task/{task}/live:
+    parameters:
+    - name: task
+      in: path
+      required: true
+      schema:
+        type: string
+
+  /v1/task/{task}/completion:
+    get:
+      responses:
+        '200':
+          description: Completion
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateResponse"
+    post:
+      responses:
+        '200':
+          description: Completion
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateResponse"
+    parameters:
+    - name: task
+      in: path
+      required: true
+      schema:
+        type: string

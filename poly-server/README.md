@@ -21,6 +21,8 @@ $env:RUST_LOG="llmd=debug"
 cargo run --release
 ```
 
+### API
+
 To generate completions:
 
 ```sh
@@ -42,8 +44,23 @@ curl -XPOST --url http://localhost:3000/v1/task/pythia/embedding --header 'Conte
 #### Memories
 
 ```sh
-curl -XPOST "http://localhost:3000/v1/memory/test?api_key=foo" -vvvv -d "Hello, world"
+curl -XPUT "http://localhost:3000/v1/memory/test?api_key=foo" -vvvv -d "Hello, world" -H "Content-type: text/plain"
 ```
+
+See [openapi.yaml](./openapi.yaml) for more information (incomplete as of yet).
+
+### With Qdrant
+
+Build with feature `qdrant` enabled, then configure:
+
+```toml
+[memories.qtest]
+store = { qdrant = { url = "http://localhost:6334", collection = "test" } }
+dimensions = 3200
+embedding_model = "orcamini3b"
+```
+
+See [poly-backend](../poly-backend/README.md) for further information.
 
 ### With CUDA
 
