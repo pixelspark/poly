@@ -7,6 +7,7 @@ edition = "2021"
 default = []
 metal = ["llm/metal"]
 cublas = ["llm/cublas"]
+qdrant = ["dep:qdrant-client"]
 
 [dependencies]
 async-stream = "0.3.5"
@@ -24,3 +25,4 @@ tracing-test = "0.2.4"
 poly-bias = "0.1.0"
 async-trait = "0.1.71"
 hora = "0.1.1"
+qdrant-client = {version = "1.3.0", optional = true }

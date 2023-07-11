@@ -11,8 +11,7 @@ pub use llm::{InferenceFeedback, InferenceResponse};
 use tokio::task::spawn_blocking;
 
 use crate::{
-	config::{BackendConfig, MemoryConfig, MemoryStoreConfig, ModelConfig},
-	memory::hora::HoraMemory,
+	config::{BackendConfig, ModelConfig},
 	memory::{Memory, MemoryError},
 	session::BackendSession,
 	stats::TaskStats,
@@ -319,14 +318,6 @@ impl Default for BackendStats {
 	fn default() -> Self {
 		BackendStats {
 			task_stats: Mutex::new(HashMap::new()),
-		}
-	}
-}
-
-impl MemoryStoreConfig {
-	pub fn from(&self, memory_config: &MemoryConfig) -> Result<Box<dyn Memory>, MemoryError> {
-		match self {
-			Self::Hora { path } => Ok(Box::new(HoraMemory::new(path, memory_config.dimensions)?)),
 		}
 	}
 }

@@ -3,6 +3,8 @@ use poly_bias::json::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 
+use crate::memory::MemoryStoreConfig;
+
 fn architecture_from_str<'de, D>(deserializer: D) -> Result<ModelArchitecture, D::Error>
 where
 	D: Deserializer<'de>,
@@ -17,15 +19,6 @@ where
 		"bloom" => Ok(ModelArchitecture::Bloom),
 		_ => Err(serde::de::Error::custom("invalid model architecture name")),
 	}
-}
-
-#[derive(Deserialize, Debug, Clone, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MemoryStoreConfig {
-	Hora {
-		/// Path to the memory file
-		path: PathBuf,
-	},
 }
 
 #[derive(Deserialize, Debug, Clone, Serialize)]

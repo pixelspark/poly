@@ -31,6 +31,11 @@ store = { hora = { path = "test.index" } }
 chunk_separators = ["."]
 chunk_max_tokens = 255
 
+[memories.qtest]
+store = { qdrant = { url = "http://localhost:6333", collection = "test" } }
+dimensions = 3200
+embedding_model = "orcamini3b"
+
 [tasks.pythia]
 model = "pythia160m"
 
