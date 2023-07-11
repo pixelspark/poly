@@ -22,6 +22,8 @@ impl QdrantMemory {
 	}
 }
 
+const ITEM_NAMESPACE: uuid::Uuid = uuid::uuid!("067FB304-F9B1-4E74-8ACA-28051B8492AB");
+
 #[async_trait]
 impl Memory for QdrantMemory {
 	async fn store(&self, text: &str, embedding: &[f32]) -> Result<(), MemoryError> {
@@ -31,7 +33,8 @@ impl Memory for QdrantMemory {
 			"embedding to store must have same dimensionality as configured for the memory"
 		);
 		let payload: Payload = json!({ "text": text }).try_into().unwrap();
-		let points = vec![PointStruct::new(0, embedding.to_vec(), payload)];
+		let id = uuid::Uuid::new_v5(&ITEM_NAMESPACE, text.as_bytes());
+		let points = vec![PointStruct::new(id.to_string(), embedding.to_vec(), payload)];
 		self.client
 			.upsert_points_blocking(&self.collection_name, points, None)
 			.await
