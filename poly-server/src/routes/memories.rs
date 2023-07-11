@@ -5,7 +5,7 @@ use axum::{
 	http::{Request, StatusCode},
 	middleware::Next,
 	response::IntoResponse,
-	routing::{get, post},
+	routing::{get, post, put},
 	Extension, Json, Router,
 };
 use poly_backend::types::MemoriesResponse;
@@ -22,7 +22,8 @@ pub fn router() -> Router<Arc<Server>, axum::body::Body> {
 		"/:memory",
 		Router::new()
 			.route("/", get(get_memory_recall_handler))
-			.route("/", post(post_memory_remember_handler))
+			.route("/", post(post_memory_recall_handler))
+			.route("/", put(post_memory_remember_handler))
 			.layer(axum::middleware::from_fn(authorize)),
 	)
 }
@@ -41,7 +42,7 @@ pub struct RecallRequest {
 
 #[derive(Serialize)]
 pub struct RecallResponse {
-	pub memories: Vec<String>,
+	pub chunks: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -56,6 +57,14 @@ async fn post_memory_remember_handler(
 	Ok(Json(RememberResponse {}))
 }
 
+async fn post_memory_recall_handler(
+	State(state): State<Arc<Server>>,
+	Path(memory_name): Path<String>,
+	Json(request): Json<RecallRequest>,
+) -> Result<Json<RecallResponse>, GenerateError> {
+	memory_recall_handler(state, &memory_name, request).await.map(Json)
+}
+
 async fn get_memory_recall_handler(
 	State(state): State<Arc<Server>>,
 	Path(memory_name): Path<String>,
@@ -67,7 +76,7 @@ async fn get_memory_recall_handler(
 async fn memory_recall_handler(state: Arc<Server>, memory_name: &str, request: RecallRequest) -> Result<RecallResponse, GenerateError> {
 	let backend = state.backend.clone();
 	Ok(RecallResponse {
-		memories: backend.recall(memory_name, &request.prompt, request.n.unwrap_or(1)).await?,
+		chunks: backend.recall(memory_name, &request.prompt, request.n.unwrap_or(1)).await?,
 	})
 }
 

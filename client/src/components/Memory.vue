@@ -82,7 +82,7 @@ async function storeFile(mime: string, body: string | File) {
     );
 
     await fetch(url, {
-      method: "POST",
+      method: "PUT",
       headers,
       body,
     });
@@ -102,7 +102,7 @@ async function retrieve() {
       prompt: prompt.value,
       n: 3,
     });
-    response.value = res.memories;
+    response.value = res.chunks;
   }
 }
 
