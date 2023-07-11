@@ -35,6 +35,11 @@
           <button :disabled="!memory || storing" @click="upload">
             Upload file(s)...
           </button>
+
+          <div>
+            <input type="checkbox" v-model="wait" />Wait for completion when
+            storing documents
+          </div>
         </dd>
       </dl>
 
@@ -62,6 +67,7 @@ const memory = ref("");
 const memories = ref([]);
 const response = ref([]);
 const storing = ref(false);
+const wait = ref(false);
 
 async function reload() {
   memories.value = (await get("v1/memory")).memories;
@@ -80,6 +86,8 @@ async function storeFile(mime: string, body: string | File) {
       "v1/memory/" + encodeURIComponent(memory.value),
       base.value
     );
+
+    url.searchParams.append("wait", wait.value ? "true" : "false");
 
     await fetch(url, {
       method: "PUT",

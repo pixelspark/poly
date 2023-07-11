@@ -23,7 +23,7 @@ pub fn router() -> Router<Arc<Server>, axum::body::Body> {
 		Router::new()
 			.route("/", get(get_memory_recall_handler))
 			.route("/", post(post_memory_recall_handler))
-			.route("/", put(post_memory_remember_handler))
+			.route("/", put(put_memory_remember_handler))
 			.layer(axum::middleware::from_fn(authorize)),
 	)
 }
@@ -48,12 +48,35 @@ pub struct RecallResponse {
 #[derive(Serialize)]
 pub struct RememberResponse {}
 
-async fn post_memory_remember_handler(
+#[derive(Deserialize)]
+pub struct RememberRequest {
+	#[serde(default = "default_wait")]
+	pub wait: bool,
+}
+
+const fn default_wait() -> bool {
+	true
+}
+
+async fn put_memory_remember_handler(
 	State(state): State<Arc<Server>>,
 	Path(memory_name): Path<String>,
+	Query(params): Query<RememberRequest>,
 	Plaintext(body): Plaintext,
 ) -> Result<Json<RememberResponse>, GenerateError> {
-	state.backend.memorize(&memory_name, &body).await?;
+	if params.wait {
+		state.backend.memorize(&memory_name, &body).await?;
+	} else {
+		// Defer to a background job
+		tokio::task::spawn(async move {
+			tracing::info!("spawning task to memorize document");
+			match state.backend.memorize(&memory_name, &body).await {
+				Ok(_) => {}
+				Err(e) => tracing::error!("error memorizing: {e}"),
+			}
+			tracing::info!("ending task to memorize document");
+		});
+	}
 	Ok(Json(RememberResponse {}))
 }
 
