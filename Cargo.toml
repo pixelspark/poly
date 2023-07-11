@@ -12,6 +12,9 @@ members = [
 [workspace.dependencies]
 llm = { git = "https://github.com/rustformers/llm.git", default-features = false, features = ["models"] }
 
+[profile.dev.package.ggml-sys]
+opt-level = 3
+
 [patch.crates-io]
 poly-bias = { path = "./poly-bias" }
 poly-backend = { path = "./poly-backend" }
