@@ -21,13 +21,6 @@
       <dd><button @click="run">Calculate</button></dd>
     </dl>
 
-    <ul style="display: block; margin: 0; padding: 0">
-      <li
-        v-for="result in results"
-        style="display: inline-block; list-style: none; margin: 5px"
-      ></li>
-    </ul>
-
     <table>
       <tr>
         <th></th>
