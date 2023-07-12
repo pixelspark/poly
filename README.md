@@ -76,6 +76,9 @@ sequenceDiagram
     Task->>LLM: Prelude
     loop
         User->>+Task: Prompt
+		alt When recall is enabled
+			Task->>LLM: Recalled memory items (based on user prompt)
+		end
         Task->>+LLM: Prefix
         Task->>LLM: Prompt
         Task->>LLM: Postfix
@@ -94,6 +97,9 @@ sequenceDiagram
     Task->>LLM: Prelude
     loop
         User->>+Task: Prompt
+		alt When recall is enabled
+			Task->>LLM: Recalled memory items (based on user prompt)
+		end
         Task->>+LLM: Prefix
         Task->>LLM: Prompt
         Task->>LLM: Postfix
