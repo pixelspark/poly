@@ -231,9 +231,7 @@ async fn sse_task_handler(
 				_ => Ok(llm::InferenceFeedback::Continue),
 			}
 		})
-	})
-	.await
-	.unwrap()?;
+	});
 
 	struct Guard {
 		flag: Arc<AtomicBool>,
@@ -246,7 +244,7 @@ async fn sse_task_handler(
 	}
 
 	let stream = stream! {
-		let _guard = Guard{flag: active};
+		let _guard = Guard{ flag: active };
 		loop {
 			match rx.recv().await {
 				Some(token) => {
