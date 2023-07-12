@@ -16,11 +16,13 @@ use crate::{
 };
 
 pub fn router() -> Router<Arc<Server>, axum::body::Body> {
-	Router::new()
-		.route("/", get(models_handler))
-		.route("/:model/embedding", post(post_model_embedding_handler))
-		.route("/:model/embedding", get(get_model_embedding_handler))
-		.layer(axum::middleware::from_fn(authorize))
+	Router::new().route("/", get(models_handler)).nest(
+		"/:model",
+		Router::new()
+			.route("/embedding", post(post_model_embedding_handler))
+			.route("/embedding", get(get_model_embedding_handler))
+			.layer(axum::middleware::from_fn(authorize)),
+	)
 }
 
 async fn models_handler(State(state): State<Arc<Server>>) -> impl IntoResponse {
