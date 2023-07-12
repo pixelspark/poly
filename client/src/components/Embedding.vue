@@ -23,12 +23,45 @@
 
     <ul style="display: block; margin: 0; padding: 0">
       <li
-        v-for="blob in results"
+        v-for="result in results"
         style="display: inline-block; list-style: none; margin: 5px"
-      >
-        <img :src="blob" />
-      </li>
+      ></li>
     </ul>
+
+    <table>
+      <tr>
+        <th></th>
+        <th v-for="result in results" :title="result.prompt">
+          <img :src="result.blobSource" :alt="result.prompt" />
+          <br />{{ result.prompt.substring(0, 25) }}
+        </th>
+      </tr>
+
+      <tr v-for="resultA in results">
+        <td :title="resultA.prompt">
+          <img
+            :src="resultA.blobSource"
+            :alt="resultA.prompt"
+            style="float: left; margin: 3px"
+          />{{ resultA.prompt.substring(0, 25) }}
+        </td>
+        <td
+          v-for="resultB in results"
+          :style="{
+            backgroundColor: colorFor(
+              cosineSimilarity(resultA.data, resultB.data)
+            ),
+            textAlign: 'right',
+          }"
+        >
+          {{
+            Math.round(cosineSimilarity(resultA.data, resultB.data) * 100) / 100
+          }}
+        </td>
+      </tr>
+    </table>
+
+    <button @click="clear">Clear results</button>
   </div>
 </template>
 
@@ -41,16 +74,44 @@ const get = inject("get") as (path: string) => any;
 const post = inject("post") as (path: string, data: any) => any;
 const prompt = ref("");
 
-const results = ref([]) as Ref<any[]>;
+interface EmbeddingResult {
+  blobSource: string;
+  prompt: string;
+  data: number[];
+}
+
+const results = ref([]) as Ref<EmbeddingResult[]>;
 
 async function reload() {
   models.value = (await get("v1/model")).models;
 }
 
+function colorFor(cs: number) {
+  return `rgba(153,204,0,${Math.pow(cs, 2)})`;
+}
+
+function cosineSimilarity(dataA: number[], dataB: number[]) {
+  var dotProduct = 0;
+  var mA = 0;
+  var mB = 0;
+
+  for (let i = 0; i < dataA.length; i++) {
+    dotProduct += dataA[i] * dataB[i];
+    mA += dataA[i] * dataA[i];
+    mB += dataB[i] * dataB[i];
+  }
+
+  mA = Math.sqrt(mA);
+  mB = Math.sqrt(mB);
+  const similarity = dotProduct / (mA * mB);
+  return similarity;
+}
+
 async function run() {
+  const promptText = prompt.value;
   const res = await post(
     "v1/model/" + encodeURIComponent(model.value) + "/embedding",
-    { prompt: prompt.value }
+    { prompt: promptText }
   );
 
   const minValue = -1.0;
@@ -83,14 +144,18 @@ async function run() {
   canvas.toBlob((blob) => {
     if (blob) {
       const url = URL.createObjectURL(blob);
-      results.value.push(url);
+      results.value.push({ blobSource: url, prompt: promptText, data });
     }
   }, "image/png");
 }
 
-onUnmounted(() => {
-  results.value.forEach((blobURL) => URL.revokeObjectURL(blobURL));
+function clear() {
+  results.value.forEach((result) => URL.revokeObjectURL(result.blobSource));
   results.value = [];
+}
+
+onUnmounted(() => {
+  clear();
 });
 
 onMounted(() => reload());
