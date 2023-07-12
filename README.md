@@ -162,3 +162,10 @@ GGML-->CUDA
 ## Authors
 
 - Tommy van der Vorst (vandervorst@dialogic.nl)
+
+## License
+
+Specific licenses apply to the following files:
+
+- [./data/pythia-160m-q4_0.bin](./data/pythia-160m-q4_0.bin): Apache 2.0, source [here](https://huggingface.co/rustformers/pythia-ggml).
+- [./data/gpt2-small-dutch-f16.bin](./data/gpt2-small-dutch-f16.bin): Apache 2.0, source [here](https://huggingface.co/GroNLP/gpt2-small-dutch-embeddings), license [here](https://github.com/wietsedv/gpt2-recycle/blob/master/LICENSE).

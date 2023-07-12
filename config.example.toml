@@ -13,6 +13,15 @@ allowed_keys = [
 # To allow usage without any key
 # public = true
 
+
+[models.gpt2dutch]
+model_path = "./data/gpt2-small-dutch-f16.bin"
+architecture = "gpt2"
+threads_per_session = 8
+
+[tasks.gpt2dutch]
+model = "gpt2dutch"
+
 [models.pythia160m]
 model_path  = "./data/pythia-160m-q4_0.bin"
 architecture = "gptneox"
