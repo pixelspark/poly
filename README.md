@@ -123,7 +123,7 @@ Poly is divided into separate crates that can be used independently:
 - [poly-bias](./poly-bias): Crate for biasing LLM output to e.g. JSON following a schema
 - [poly-ui](./poly-ui): Simple desktop UI for local LLMs
 
-Applications looking to integrate Poly's capabilities should depend on `poly-backend`.
+Applications that want to employ Poly's functionality should use the HTTP REST API exposed by `poly-server`. Rust applications looking to integrate Poly's capabilities could also depend on `poly-backend` directly.
 
 ```mermaid
 flowchart TD
