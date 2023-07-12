@@ -291,7 +291,7 @@ dependencies = [
  "pin-project-lite",
  "rustversion",
  "serde 1.0.171",
- "serde_json 1.0.100",
+ "serde_json 1.0.102",
  "serde_path_to_error",
  "serde_urlencoded",
  "sha1 0.10.5",
@@ -434,7 +434,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6798148dccfbff0fae41c7574d2fa8f1ef3492fba0face179de5d8d447d67b05"
 dependencies = [
  "memchr",
- "regex-automata 0.3.2",
+ "regex-automata 0.3.3",
  "serde 1.0.171",
 ]
 
@@ -1639,7 +1639,7 @@ dependencies = [
 [[package]]
 name = "ggml"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm.git#bc9f2fe55de48de5e2b96f7984b60efaac6eaea2"
 dependencies = [
  "ggml-sys",
  "memmap2",
@@ -1649,7 +1649,7 @@ dependencies = [
 [[package]]
 name = "ggml-sys"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm.git#bc9f2fe55de48de5e2b96f7984b60efaac6eaea2"
 dependencies = [
  "cc",
 ]
@@ -2334,7 +2334,7 @@ dependencies = [
  "pem",
  "ring",
  "serde 1.0.171",
- "serde_json 1.0.100",
+ "serde_json 1.0.102",
  "simple_asn1",
 ]
 
@@ -2418,7 +2418,7 @@ checksum = "09fc20d2ca12cb9f044c93e3bd6d32d523e6e2ec3db4f7b2939cd99026ecd3f0"
 [[package]]
 name = "llm"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm.git#bc9f2fe55de48de5e2b96f7984b60efaac6eaea2"
 dependencies = [
  "llm-base",
  "llm-bloom",
@@ -2433,7 +2433,7 @@ dependencies = [
 [[package]]
 name = "llm-base"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm.git#bc9f2fe55de48de5e2b96f7984b60efaac6eaea2"
 dependencies = [
  "bytemuck",
  "ggml",
@@ -2451,7 +2451,7 @@ dependencies = [
 [[package]]
 name = "llm-bloom"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm.git#bc9f2fe55de48de5e2b96f7984b60efaac6eaea2"
 dependencies = [
  "llm-base",
 ]
@@ -2459,7 +2459,7 @@ dependencies = [
 [[package]]
 name = "llm-gpt2"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm.git#bc9f2fe55de48de5e2b96f7984b60efaac6eaea2"
 dependencies = [
  "bytemuck",
  "llm-base",
@@ -2468,7 +2468,7 @@ dependencies = [
 [[package]]
 name = "llm-gptj"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm.git#bc9f2fe55de48de5e2b96f7984b60efaac6eaea2"
 dependencies = [
  "llm-base",
 ]
@@ -2476,7 +2476,7 @@ dependencies = [
 [[package]]
 name = "llm-gptneox"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm.git#bc9f2fe55de48de5e2b96f7984b60efaac6eaea2"
 dependencies = [
  "llm-base",
 ]
@@ -2484,7 +2484,7 @@ dependencies = [
 [[package]]
 name = "llm-llama"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm.git#bc9f2fe55de48de5e2b96f7984b60efaac6eaea2"
 dependencies = [
  "llm-base",
 ]
@@ -2492,7 +2492,7 @@ dependencies = [
 [[package]]
 name = "llm-mpt"
 version = "0.2.0-dev"
-source = "git+https://github.com/rustformers/llm.git#7f13bb90f678e2bdf70d221f1b790fab55cb4d7f"
+source = "git+https://github.com/rustformers/llm.git#bc9f2fe55de48de5e2b96f7984b60efaac6eaea2"
 dependencies = [
  "llm-base",
 ]
@@ -2852,9 +2852,9 @@ dependencies = [
 
 [[package]]
 name = "num"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43db66d1170d347f9a065114077f7dccb00c1b9478c89384490a3425279a4606"
+checksum = "b05180d69e3da0e530ba2a1dae5110317e49e3b7f3d41be227dc5f92e49ee7af"
 dependencies = [
  "num-bigint",
  "num-complex",
@@ -3394,7 +3394,7 @@ dependencies = [
  "qdrant-client",
  "rand 0.8.5",
  "serde 1.0.171",
- "serde_json 1.0.100",
+ "serde_json 1.0.102",
  "thiserror",
  "tokio",
  "toml 0.7.6",
@@ -3412,7 +3412,7 @@ dependencies = [
  "partial_sort",
  "rand 0.8.5",
  "serde 1.0.171",
- "serde_json 1.0.100",
+ "serde_json 1.0.102",
  "thiserror",
  "tokio",
  "tracing",
@@ -3447,7 +3447,7 @@ dependencies = [
  "poly-extract",
  "rand 0.8.5",
  "serde 1.0.171",
- "serde_json 1.0.100",
+ "serde_json 1.0.102",
  "thiserror",
  "tokio",
  "toml 0.7.6",
@@ -3576,7 +3576,7 @@ dependencies = [
  "prost-types",
  "reqwest",
  "serde 1.0.171",
- "serde_json 1.0.100",
+ "serde_json 1.0.102",
  "tonic",
 ]
 
@@ -3852,7 +3852,7 @@ checksum = "b2eae68fc220f7cf2532e4494aded17545fce192d59cd996e0fe7887f4ceb575"
 dependencies = [
  "aho-corasick 1.0.2",
  "memchr",
- "regex-automata 0.3.2",
+ "regex-automata 0.3.3",
  "regex-syntax 0.7.4",
 ]
 
@@ -3867,9 +3867,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83d3daa6976cffb758ec878f108ba0e062a45b2d6ca3a2cca965338855476caf"
+checksum = "39354c10dd07468c2e73926b23bb9c2caca74c5501e38a35da70406f1d923310"
 dependencies = [
  "aho-corasick 1.0.2",
  "memchr",
@@ -3920,7 +3920,7 @@ dependencies = [
  "rustls",
  "rustls-pemfile",
  "serde 1.0.171",
- "serde_json 1.0.100",
+ "serde_json 1.0.102",
  "serde_urlencoded",
  "tokio",
  "tokio-rustls",
@@ -3991,9 +3991,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.38.3"
+version = "0.38.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac5ffa1efe7548069688cd7028f32591853cd7b5b756d41bcffd2353e4fc75b4"
+checksum = "0a962918ea88d644592894bc6dc55acc6c0956488adcebbfb6e273506b7fd6e5"
 dependencies = [
  "bitflags 2.3.3",
  "errno",
@@ -4228,9 +4228,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.100"
+version = "1.0.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f1e14e89be7aa4c4b78bdbdc9eb5bf8517829a600ae8eaa39a6e1d960b5185c"
+checksum = "b5062a995d481b2308b6064e9af76011f2921c35f97b0468811ed9f6cd91dfed"
 dependencies = [
  "itoa 1.0.8",
  "ryu",
@@ -4535,7 +4535,7 @@ dependencies = [
  "quote",
  "serde 1.0.171",
  "serde_derive",
- "serde_json 1.0.100",
+ "serde_json 1.0.102",
  "sha1 0.6.1",
  "syn 1.0.109",
 ]
@@ -4835,7 +4835,7 @@ dependencies = [
  "regex",
  "regex-syntax 0.6.29",
  "serde 1.0.171",
- "serde_json 1.0.100",
+ "serde_json 1.0.102",
  "spm_precompiled",
  "thiserror",
  "unicode-normalization-alignments",
