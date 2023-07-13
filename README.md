@@ -10,6 +10,7 @@ Poly is a versatile LLM serving back-end. What it offers:
 - Memory retrieval using vector databases (either built-in file based, or external such as Qdrant)
 - Accepts and automatically chunks PDF and DOCX files for storage to memory
 - API secured using either static API keys or JWT tokens
+- Simple, single binary + config file server deployment, horizontally scalable
 
 Nice extras:
 
