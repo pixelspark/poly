@@ -17,10 +17,6 @@ Nice extras:
 - A web client to easily test and fine-tune configuration
 - A single-binary cross platform desktop client for locally running models
 
-![Web client demonstration](./docs/webclient.gif)
-
-![Desktop client demonstration](./docs/ui.gif)
-
 Supported models include:
 
 - LLaMa and derivatives (Alpaca, Vicuna, Guanaco, etc.)
@@ -28,7 +24,32 @@ Supported models include:
 - MPT
 - Orca-mini
 
-See [config.example.toml](./config.example.toml) for example configurations.
+|                    Web client                     |                  Desktop app                   |
+| :-----------------------------------------------: | :--------------------------------------------: |
+| ![Web client demonstration](./docs/webclient.gif) | ![Desktop client demonstration](./docs/ui.gif) |
+
+Sample of a model+task+memory configuration:
+
+```toml
+[models.gpt2dutch]
+model_path = "./data/gpt2-small-dutch-f16.bin"
+architecture = "gpt2"
+use_gpu = false
+
+[memories.dutch_qdrant]
+store = { qdrant = { url = "http://127.0.0.1:6333", collection = "nl" } }
+dimensions = 768
+embedding_model = "gpt2dutch"
+
+[tasks.dutch_completion]
+model = "gpt2dutch"
+prelude = "### System:\nYou are an AI assistant that follows instruction extremely well. Help as much as you can.\n"
+prefix =  "\n### User:\n"
+postfix = "\n### Response:"
+memorization = { memory = "dutch_qdrant", retrieve = 2 }
+```
+
+See [config.example.toml](./config.example.toml) for more example configurations.
 
 ## Concepts
 
