@@ -39,6 +39,27 @@ pub struct MemoryConfig {
 	/// Maximum length for a chunk (in tokens)
 	#[serde(default = "default_chunk_max_tokens")]
 	pub chunk_max_tokens: usize,
+
+	/// Remove the following patterns (regular expressions) before chunking, replacing them with a single space (after
+	/// which double spaces are eliminated)
+	#[serde(default = "default_pre_filter")]
+	pub pre_filter: Vec<String>,
+
+	/// Remove the following tokens after chunking (strings must refer to single tokens)
+	#[serde(default = "default_post_filter")]
+	pub post_filter: Vec<String>,
+}
+
+fn default_pre_filter() -> Vec<String> {
+	vec![
+		"[\\r\\t]".to_string(),          // Any carriage return or tab
+		"[\\ \\n._|-]{2,}".to_string(),  // Specific characters occuring more than once
+		"^[\\r\\n\\ ._|-]+".to_string(), // Specific characters at the beginning of a chunk
+	]
+}
+
+fn default_post_filter() -> Vec<String> {
+	vec!["\n".to_string()]
 }
 
 #[derive(Deserialize, Debug, Clone)]

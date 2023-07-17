@@ -100,6 +100,9 @@ pub enum GenerateError {
 
 	#[error("invalid document supplied")]
 	InvalidDocument,
+
+	#[error("chunk separator '{0}' invalid: must consist of exactly one token")]
+	InvalidChunkSeparator(String),
 }
 
 impl From<InferenceError> for GenerateError {

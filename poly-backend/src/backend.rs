@@ -1,5 +1,6 @@
 use std::{
-	collections::HashMap,
+	borrow::Cow,
+	collections::{HashMap, HashSet},
 	path::PathBuf,
 	sync::{Arc, Mutex},
 };
@@ -8,11 +9,12 @@ use directories::ProjectDirs;
 use futures_util::StreamExt;
 pub use llm::{InferenceFeedback, InferenceResponse};
 use llm::{InferenceParameters, InferenceSessionConfig, InferenceStats, Model, ModelParameters, OutputRequest, Prompt, TokenId, TokenizerSource};
+use regex::Regex;
 use tokio::{fs::File, io::AsyncWriteExt, sync::mpsc::Sender, task::spawn_blocking};
 
 use crate::{
 	config::{BackendConfig, ModelConfig},
-	memory::{Memory, MemoryError},
+	memory::{hierarchically_chunk, Memory, MemoryError},
 	session::BackendSession,
 	stats::TaskStats,
 	types::{EmbeddingResponse, GenerateError, PromptRequest, SessionRequest},
@@ -289,6 +291,7 @@ impl Backend {
 			return Err(GenerateError::MemoryNotFound(memory_name.to_string()));
 		}
 		let memory = self.memories.get(memory_name).unwrap();
+		tracing::info!("clearing memory {memory_name}");
 		memory.clear().await.map_err(GenerateError::Memory)
 	}
 
@@ -319,44 +322,65 @@ impl Backend {
 		let model = self.models.get(model_name).unwrap().clone();
 		let model_config = self.config.models[model_name].clone();
 
-		// Split the input by all separator
-		let vocab = model.tokenizer();
-		let mut splits = vec![data];
-		for splitter in &memory_config.chunk_separators {
-			splits = splits.into_iter().flat_map(|s| s.split_inclusive(splitter)).collect();
-		}
-
-		let mut current_chunk = vec![];
-		let mut current_chunk_text = String::new();
-		let mut first = true;
-		for split in splits {
-			let split_tokens: Vec<(Vec<u8>, TokenId)> = vocab.tokenize(split, first).map_err(GenerateError::TokenizationError)?;
-
-			// If this split exceeds the limits by itself, just chop it up until it fits
-			for tokens in split_tokens.chunks(memory_config.chunk_max_tokens) {
-				// Fill 'current_chunk' up to the max amount
-				if tokens.len() + current_chunk.len() > memory_config.chunk_max_tokens {
-					// This chunk is finished, commit to memory
-					let model = model.clone();
-					let memory = memory.clone();
-
-					let current_chunk_to_store: Vec<u32> = std::mem::take(&mut current_chunk);
-					let current_chunk_text_to_store: String = std::mem::take(&mut current_chunk_text);
-					Self::memorize_chunk(model, &model_config, &current_chunk_text_to_store, current_chunk_to_store, memory).await?;
-
-					current_chunk_text.clear();
-				}
-
-				current_chunk.extend(tokens.iter().map(|x| x.1));
-				let tokens_bytes: Vec<u8> = tokens.iter().flat_map(|t| t.0.clone()).collect();
-				let tokens_text = String::from_utf8_lossy(&tokens_bytes);
-				current_chunk_text.push_str(&tokens_text);
-				first = false;
+		// Apply pre-filter
+		let mut data = Cow::from(data);
+		if !memory_config.pre_filter.is_empty() {
+			for filter_string in memory_config.pre_filter.iter() {
+				let regex = Regex::new(filter_string).unwrap();
+				let out = regex.replace_all(&data, " ").to_string();
+				data = Cow::Owned(out);
 			}
+
+			// Replace double spaces with single spaces
+			data = Cow::Owned(data.replace("  ", " "));
 		}
 
-		if !current_chunk.is_empty() {
-			Self::memorize_chunk(model, &model_config, &current_chunk_text, current_chunk, memory).await?;
+		// Split the input by all separators
+		let vocab = model.tokenizer();
+		let separator_tokens: Vec<TokenId> = memory_config
+			.chunk_separators
+			.iter()
+			.map(|s| {
+				let tokens = vocab.tokenize(s, false)?;
+				if tokens.len() != 1 {
+					return Err(GenerateError::InvalidChunkSeparator(s.clone()));
+				}
+				Ok(tokens[0].1)
+			})
+			.collect::<Result<Vec<TokenId>, GenerateError>>()?;
+
+		let body_tokens = vocab.tokenize(data.as_ref(), false)?;
+		let chunks = hierarchically_chunk(body_tokens, &separator_tokens, memory_config.chunk_max_tokens);
+
+		let post_filter_tokens = memory_config
+			.post_filter
+			.iter()
+			.map(|s| {
+				let tokens = vocab.tokenize(s, false)?;
+				if tokens.len() != 1 {
+					return Err(GenerateError::InvalidChunkSeparator(s.clone()));
+				}
+				Ok(tokens[0].1)
+			})
+			.collect::<Result<HashSet<TokenId>, GenerateError>>()?;
+
+		for mut chunk in chunks {
+			assert!(
+				chunk.len() <= memory_config.chunk_max_tokens,
+				"chunk size ({}) must not exceed maximum ({})",
+				chunk.len(),
+				memory_config.chunk_max_tokens
+			);
+			// Apply post filter
+			chunk.retain(|t| !post_filter_tokens.contains(&t.1));
+
+			if !chunk.is_empty() {
+				let chunk_tokens: Vec<TokenId> = chunk.iter().map(|x| x.1).collect();
+				let chars: Vec<u8> = chunk.iter().flat_map(|x| x.0.clone()).collect();
+				let chunk_text = String::from_utf8_lossy(&chars);
+				tracing::trace!(?chunk_text, chunk_size_tokens = chunk_tokens.len(), "chunk for ingest");
+				Self::memorize_chunk(model.clone(), &model_config, &chunk_text, chunk_tokens, memory.clone()).await?;
+			}
 		}
 
 		Ok(())

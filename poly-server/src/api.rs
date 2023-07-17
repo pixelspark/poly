@@ -43,6 +43,7 @@ impl GenerateError {
 			OriginalGenerateError::InferenceError(_) | OriginalGenerateError::TokenizationError(_) => StatusCode::INTERNAL_SERVER_ERROR,
 			OriginalGenerateError::Memory(_) => StatusCode::INTERNAL_SERVER_ERROR,
 			OriginalGenerateError::IllegalToken | OriginalGenerateError::InvalidDocument => StatusCode::BAD_REQUEST,
+			OriginalGenerateError::InvalidChunkSeparator(_) => StatusCode::INTERNAL_SERVER_ERROR,
 		}
 	}
 }

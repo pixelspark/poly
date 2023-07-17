@@ -3535,6 +3535,7 @@ dependencies = [
  "poly-bias",
  "qdrant-client",
  "rand 0.8.5",
+ "regex",
  "reqwest",
  "serde 1.0.171",
  "serde_json 1.0.103",
