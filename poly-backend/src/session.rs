@@ -22,7 +22,7 @@ use crate::{
 	memory::Memory,
 	sequence::{Sequence, SequenceSet},
 	stats::InferenceStatsAdd,
-	types::{GenerateError, PromptRequest},
+	types::{BackendError, PromptRequest},
 };
 
 pub struct BackendSession {
@@ -48,7 +48,7 @@ impl Debug for BackendSession {
 }
 
 impl BackendSession {
-	fn reminder_prompt(&mut self, request: &PromptRequest) -> Result<Option<String>, GenerateError> {
+	fn reminder_prompt(&mut self, request: &PromptRequest) -> Result<Option<String>, BackendError> {
 		// Check if we need to recall items from memory first
 		if let Some(memorization) = &self.task_config.memorization {
 			if let Some(retrieve) = memorization.retrieve {
@@ -66,7 +66,7 @@ impl BackendSession {
 							let remembered = rm.await?;
 							tracing::debug!("retrieved from memory: {remembered:?}");
 							let reminder_prompt: String = remembered.join("\n");
-							Ok::<_, GenerateError>(reminder_prompt)
+							Ok::<_, BackendError>(reminder_prompt)
 						}))
 						.unwrap()?;
 					tracing::info!("Reminder prompt: {reminder_prompt}");
@@ -81,8 +81,8 @@ impl BackendSession {
 	pub fn complete(
 		&mut self,
 		request: &PromptRequest,
-		callback: impl FnMut(InferenceResponse) -> Result<InferenceFeedback, GenerateError>,
-	) -> Result<InferenceStats, GenerateError> {
+		callback: impl FnMut(InferenceResponse) -> Result<InferenceFeedback, BackendError>,
+	) -> Result<InferenceStats, BackendError> {
 		// Perform inference
 		let stats = self.complete_actual(request, callback)?;
 		let prompt_tokens_per_s = (stats.prompt_tokens as f64) / stats.feed_prompt_duration.as_secs_f64();
@@ -112,7 +112,7 @@ impl BackendSession {
 					.block_on(tokio::spawn(async move {
 						memory.store(&text, &embedding.embedding).await?;
 						tracing::debug!("committed to memory: {text}");
-						Ok::<(), GenerateError>(())
+						Ok::<(), BackendError>(())
 					}))
 					.unwrap()?;
 			}
@@ -124,8 +124,8 @@ impl BackendSession {
 	fn complete_actual(
 		&mut self,
 		request: &PromptRequest,
-		mut callback: impl FnMut(InferenceResponse) -> Result<InferenceFeedback, GenerateError>,
-	) -> Result<InferenceStats, GenerateError> {
+		mut callback: impl FnMut(InferenceResponse) -> Result<InferenceFeedback, BackendError>,
+	) -> Result<InferenceStats, BackendError> {
 		let mut completion_stats = InferenceStats::default();
 
 		// Generate tokens (prefix + prompt + postfix)
@@ -162,7 +162,7 @@ impl BackendSession {
 			})
 			.collect();
 		if !private_token_ids.is_empty() && user_tokens.iter().any(|t| private_token_ids.contains(t)) {
-			return Err(GenerateError::IllegalToken);
+			return Err(BackendError::IllegalToken);
 		}
 		tokens.append(&mut user_tokens);
 
@@ -179,7 +179,7 @@ impl BackendSession {
 			self.model.as_ref().as_ref(),
 			Prompt::Tokens(&tokens),
 			&mut OutputRequest::default(),
-			|_| -> Result<InferenceFeedback, GenerateError> { Ok(InferenceFeedback::Continue) },
+			|_| -> Result<InferenceFeedback, BackendError> { Ok(InferenceFeedback::Continue) },
 		)?;
 		completion_stats.add(&InferenceStats {
 			feed_prompt_duration: Instant::now().duration_since(start),
@@ -202,7 +202,7 @@ impl BackendSession {
 					play_back_previous_tokens: false,
 				},
 				&mut OutputRequest::default(),
-				|r| -> Result<InferenceFeedback, GenerateError> {
+				|r| -> Result<InferenceFeedback, BackendError> {
 					match r {
 						InferenceResponse::SnapshotToken(_) => Ok(InferenceFeedback::Continue),
 						InferenceResponse::PromptToken(_) => Ok(InferenceFeedback::Continue),
@@ -230,7 +230,7 @@ impl BackendSession {
 				self.model.as_ref().as_ref(),
 				Prompt::Text(bias_prompt.as_str()),
 				&mut OutputRequest::default(),
-				|_| -> Result<InferenceFeedback, GenerateError> { Ok(InferenceFeedback::Continue) },
+				|_| -> Result<InferenceFeedback, BackendError> { Ok(InferenceFeedback::Continue) },
 			)?;
 			completion_stats.add(&InferenceStats {
 				feed_prompt_duration: Instant::now().duration_since(start),
@@ -290,7 +290,7 @@ impl BackendSession {
 						self.model.as_ref().as_ref(),
 						Prompt::Tokens(&[only_possible_token as TokenId]),
 						&mut OutputRequest::default(),
-						|_| -> Result<InferenceFeedback, GenerateError> { Ok(InferenceFeedback::Continue) },
+						|_| -> Result<InferenceFeedback, BackendError> { Ok(InferenceFeedback::Continue) },
 					)?;
 					completion_stats.add(&InferenceStats {
 						feed_prompt_duration: Instant::now().duration_since(start),

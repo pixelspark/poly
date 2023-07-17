@@ -17,7 +17,7 @@ use crate::{
 	memory::{hierarchically_chunk, Memory, MemoryError},
 	session::BackendSession,
 	stats::TaskStats,
-	types::{EmbeddingResponse, GenerateError, PromptRequest, SessionRequest},
+	types::{BackendError, EmbeddingResponse, PromptRequest, SessionRequest, TokenResponse, TokenizationResponse},
 };
 
 use tracing::*;
@@ -253,11 +253,11 @@ impl Backend {
 		Ok(())
 	}
 
-	pub fn embedding(&self, model_name: &str, prompt: &PromptRequest) -> Result<EmbeddingResponse, GenerateError> {
-		info!("Embedding request {} ", model_name);
+	pub fn embedding(&self, model_name: &str, prompt: &PromptRequest) -> Result<EmbeddingResponse, BackendError> {
+		info!(model_name, "embedding request");
 
 		if !self.models.contains_key(model_name) {
-			return Err(GenerateError::ModelNotFound(model_name.to_string()));
+			return Err(BackendError::ModelNotFound(model_name.to_string()));
 		};
 
 		let model = self.models.get(model_name).unwrap();
@@ -286,18 +286,38 @@ impl Backend {
 		})
 	}
 
-	pub async fn forget(&self, memory_name: &str) -> Result<(), GenerateError> {
+	pub fn tokenize(&self, model_name: &str, prompt: &PromptRequest) -> Result<TokenizationResponse, BackendError> {
+		info!(model_name, "tokenization request");
+
+		if !self.models.contains_key(model_name) {
+			return Err(BackendError::ModelNotFound(model_name.to_string()));
+		};
+
+		let model = self.models.get(model_name).unwrap();
+		let res = model.tokenizer().tokenize(&prompt.prompt, true)?;
+		Ok(TokenizationResponse {
+			tokens: res
+				.iter()
+				.map(|t| TokenResponse {
+					text: String::from_utf8_lossy(&t.0).to_string(),
+					token: t.1,
+				})
+				.collect(),
+		})
+	}
+
+	pub async fn forget(&self, memory_name: &str) -> Result<(), BackendError> {
 		if !self.memories.contains_key(memory_name) {
-			return Err(GenerateError::MemoryNotFound(memory_name.to_string()));
+			return Err(BackendError::MemoryNotFound(memory_name.to_string()));
 		}
 		let memory = self.memories.get(memory_name).unwrap();
 		tracing::info!("clearing memory {memory_name}");
-		memory.clear().await.map_err(GenerateError::Memory)
+		memory.clear().await.map_err(BackendError::Memory)
 	}
 
-	pub async fn recall(&self, memory_name: &str, prompt: &str, top_n: usize) -> Result<Vec<String>, GenerateError> {
+	pub async fn recall(&self, memory_name: &str, prompt: &str, top_n: usize) -> Result<Vec<String>, BackendError> {
 		if !self.memories.contains_key(memory_name) {
-			return Err(GenerateError::MemoryNotFound(memory_name.to_string()));
+			return Err(BackendError::MemoryNotFound(memory_name.to_string()));
 		}
 
 		let memory_config = &self.config.memories[memory_name];
@@ -305,10 +325,10 @@ impl Backend {
 		// Generate embedding for prompt
 		let embedding = self.embedding(&memory_config.embedding_model, &PromptRequest { prompt: prompt.to_string() })?;
 		let memory = self.memories.get(memory_name).unwrap();
-		memory.get(&embedding.embedding, top_n).await.map_err(GenerateError::Memory)
+		memory.get(&embedding.embedding, top_n).await.map_err(BackendError::Memory)
 	}
 
-	pub async fn memorize(&self, memory_name: &str, data: &str) -> Result<(), GenerateError> {
+	pub async fn memorize(&self, memory_name: &str, data: &str) -> Result<(), BackendError> {
 		// Obtain memorization configuration
 		let memory_config = &self.config.memories[memory_name];
 		let memory = self.memories[memory_name].clone();
@@ -316,7 +336,7 @@ impl Backend {
 
 		// Get embedding model
 		if !self.models.contains_key(model_name) {
-			return Err(GenerateError::ModelNotFound(model_name.to_string()));
+			return Err(BackendError::ModelNotFound(model_name.to_string()));
 		};
 
 		let model = self.models.get(model_name).unwrap().clone();
@@ -343,11 +363,11 @@ impl Backend {
 			.map(|s| {
 				let tokens = vocab.tokenize(s, false)?;
 				if tokens.len() != 1 {
-					return Err(GenerateError::InvalidChunkSeparator(s.clone()));
+					return Err(BackendError::InvalidChunkSeparator(s.clone()));
 				}
 				Ok(tokens[0].1)
 			})
-			.collect::<Result<Vec<TokenId>, GenerateError>>()?;
+			.collect::<Result<Vec<TokenId>, BackendError>>()?;
 
 		let body_tokens = vocab.tokenize(data.as_ref(), false)?;
 		let chunks = hierarchically_chunk(body_tokens, &separator_tokens, memory_config.chunk_max_tokens);
@@ -358,11 +378,11 @@ impl Backend {
 			.map(|s| {
 				let tokens = vocab.tokenize(s, false)?;
 				if tokens.len() != 1 {
-					return Err(GenerateError::InvalidChunkSeparator(s.clone()));
+					return Err(BackendError::InvalidChunkSeparator(s.clone()));
 				}
 				Ok(tokens[0].1)
 			})
-			.collect::<Result<HashSet<TokenId>, GenerateError>>()?;
+			.collect::<Result<HashSet<TokenId>, BackendError>>()?;
 
 		for mut chunk in chunks {
 			assert!(
@@ -419,11 +439,11 @@ impl Backend {
 		Ok(())
 	}
 
-	pub fn start(&self, task_name: &str, _request: &SessionRequest, backend: Arc<Backend>) -> Result<BackendSession, GenerateError> {
+	pub fn start(&self, task_name: &str, _request: &SessionRequest, backend: Arc<Backend>) -> Result<BackendSession, BackendError> {
 		info!("Start session {task_name}");
 
 		if !self.config.tasks.contains_key(task_name) {
-			return Err(GenerateError::TaskNotFound(task_name.to_string()));
+			return Err(BackendError::TaskNotFound(task_name.to_string()));
 		};
 
 		let task_config = self.config.tasks.get(task_name).unwrap();
@@ -447,7 +467,7 @@ impl Backend {
 					model.as_ref().as_ref(),
 					Prompt::Text(&prelude_prompt.clone()),
 					&mut OutputRequest::default(),
-					|r| -> Result<InferenceFeedback, GenerateError> {
+					|r| -> Result<InferenceFeedback, BackendError> {
 						tracing::trace!("Feed prompt: received {r:?}");
 						Ok(InferenceFeedback::Continue)
 					},

@@ -15,12 +15,14 @@
         <option value="embedding">Embedding</option>
         <option value="chat">Chat</option>
         <option value="memory">Memory</option>
+        <option value="tokenization">Tokenization</option>
       </select>
 
       <Task v-if="screen === 'task'"></Task>
       <Embedding v-else-if="screen === 'embedding'"></Embedding>
       <Chat v-else-if="screen === 'chat'"></Chat>
       <Memory v-else-if="screen === 'memory'"></Memory>
+      <Tokenization v-else-if="screen === 'tokenization'"></Tokenization>
     </template>
   </div>
 </template>
@@ -31,6 +33,7 @@ import Task from "./components/Task.vue";
 import Embedding from "./components/Embedding.vue";
 import Chat from "./components/Chat.vue";
 import Memory from "./components/Memory.vue";
+import Tokenization from "./components/Tokenization.vue";
 
 const screen = ref("chat");
 

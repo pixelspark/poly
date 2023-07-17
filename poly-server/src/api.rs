@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use poly_backend::stats::TaskStats;
-use poly_backend::types::GenerateError as OriginalGenerateError;
+use poly_backend::types::BackendError as OriginalGenerateError;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct JwtClaims {
@@ -32,9 +32,9 @@ trait ToStatusCode {
 	fn status_code(&self) -> StatusCode;
 }
 
-pub struct GenerateError(OriginalGenerateError);
+pub struct BackendError(OriginalGenerateError);
 
-impl GenerateError {
+impl BackendError {
 	fn status_code(&self) -> StatusCode {
 		match self.0 {
 			OriginalGenerateError::TaskNotFound(_) | OriginalGenerateError::ModelNotFound(_) | OriginalGenerateError::MemoryNotFound(_) => {
@@ -48,14 +48,14 @@ impl GenerateError {
 	}
 }
 
-impl IntoResponse for GenerateError {
+impl IntoResponse for BackendError {
 	fn into_response(self) -> axum::response::Response {
 		(self.status_code(), format!("{}", self.0)).into_response()
 	}
 }
 
-impl From<OriginalGenerateError> for GenerateError {
-	fn from(t: OriginalGenerateError) -> GenerateError {
-		GenerateError(t)
+impl From<OriginalGenerateError> for BackendError {
+	fn from(t: OriginalGenerateError) -> BackendError {
+		BackendError(t)
 	}
 }

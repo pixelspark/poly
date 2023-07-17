@@ -25,7 +25,7 @@ use poly_backend::types::{GenerateResponse, PromptRequest, SessionAndPromptReque
 use tracing::{debug, trace};
 
 use crate::{
-	api::{GenerateError, JwtClaims},
+	api::{BackendError, JwtClaims},
 	server::Server,
 };
 
@@ -58,7 +58,7 @@ async fn get_task_completion_handler(
 	Path(task_name): Path<String>,
 	Query(request): Query<SessionRequest>,
 	Query(prompt): Query<PromptRequest>,
-) -> Result<Json<GenerateResponse>, GenerateError> {
+) -> Result<Json<GenerateResponse>, BackendError> {
 	task_completion_handler(state, task_name, request, prompt).await
 }
 
@@ -66,7 +66,7 @@ async fn post_task_completion_handler(
 	State(state): State<Arc<Server>>,
 	Path(task_name): Path<String>,
 	Json(request): Json<SessionAndPromptRequest>,
-) -> Result<Json<GenerateResponse>, GenerateError> {
+) -> Result<Json<GenerateResponse>, BackendError> {
 	task_completion_handler(state, task_name, request.session, request.prompt).await
 }
 
@@ -75,12 +75,13 @@ async fn task_completion_handler(
 	task_name: String,
 	request: SessionRequest,
 	prompt: PromptRequest,
-) -> Result<Json<GenerateResponse>, GenerateError> {
+) -> Result<Json<GenerateResponse>, BackendError> {
 	tokio::task::spawn_blocking(move || {
 		let mut text = String::new();
-		state.backend.start(&task_name, &request, state.backend.clone())?.complete(
-			&prompt,
-			|r| -> Result<_, poly_backend::types::GenerateError> {
+		state
+			.backend
+			.start(&task_name, &request, state.backend.clone())?
+			.complete(&prompt, |r| -> Result<_, poly_backend::types::BackendError> {
 				match r {
 					llm::InferenceResponse::InferredToken(t) => {
 						trace!("Output: {t}");
@@ -89,8 +90,7 @@ async fn task_completion_handler(
 					}
 					_ => Ok(llm::InferenceFeedback::Continue),
 				}
-			},
-		)?;
+			})?;
 		Ok(Json(GenerateResponse { text }))
 	})
 	.await
@@ -202,7 +202,7 @@ async fn sse_task_handler(
 	Path(task_name): Path<String>,
 	Query(request): Query<SessionRequest>,
 	Query(prompt): Query<PromptRequest>,
-) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, GenerateError> {
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, BackendError> {
 	debug!("New live connection for task '{}'", task_name.as_str());
 
 	let (tx, mut rx) = tokio::sync::mpsc::channel(32);
@@ -212,7 +212,7 @@ async fn sse_task_handler(
 	let mut session = state.backend.start(&task_name, &request, state.backend.clone()).unwrap();
 
 	tokio::task::spawn_blocking(move || {
-		session.complete(&prompt, |r| -> Result<_, poly_backend::types::GenerateError> {
+		session.complete(&prompt, |r| -> Result<_, poly_backend::types::BackendError> {
 			match r {
 				llm::InferenceResponse::InferredToken(t) => {
 					let tx = tx.clone();

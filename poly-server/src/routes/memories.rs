@@ -13,7 +13,7 @@ use poly_extract::middleware::Plaintext;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-	api::{GenerateError, JwtClaims},
+	api::{BackendError, JwtClaims},
 	server::{IngestItem, Server},
 };
 
@@ -67,7 +67,7 @@ async fn put_memory_ingest_handler(
 	Path(memory_name): Path<String>,
 	Query(params): Query<IngestRequest>,
 	Plaintext(body): Plaintext,
-) -> Result<Json<RememberResponse>, GenerateError> {
+) -> Result<Json<RememberResponse>, BackendError> {
 	if params.wait {
 		state.backend.memorize(&memory_name, &body).await?;
 	} else {
@@ -85,7 +85,7 @@ async fn put_memory_ingest_handler(
 async fn delete_memory_items_handler(
 	State(state): State<Arc<Server>>,
 	Path(memory_name): Path<String>,
-) -> Result<Json<ForgetResponse>, GenerateError> {
+) -> Result<Json<ForgetResponse>, BackendError> {
 	state.backend.forget(&memory_name).await?;
 	Ok(Json(ForgetResponse {}))
 }
@@ -94,7 +94,7 @@ async fn post_memory_recall_handler(
 	State(state): State<Arc<Server>>,
 	Path(memory_name): Path<String>,
 	Json(request): Json<RecallRequest>,
-) -> Result<Json<RecallResponse>, GenerateError> {
+) -> Result<Json<RecallResponse>, BackendError> {
 	memory_recall_handler(state, &memory_name, request).await.map(Json)
 }
 
@@ -102,11 +102,11 @@ async fn get_memory_recall_handler(
 	State(state): State<Arc<Server>>,
 	Path(memory_name): Path<String>,
 	Query(request): Query<RecallRequest>,
-) -> Result<Json<RecallResponse>, GenerateError> {
+) -> Result<Json<RecallResponse>, BackendError> {
 	memory_recall_handler(state, &memory_name, request).await.map(Json)
 }
 
-async fn memory_recall_handler(state: Arc<Server>, memory_name: &str, request: RecallRequest) -> Result<RecallResponse, GenerateError> {
+async fn memory_recall_handler(state: Arc<Server>, memory_name: &str, request: RecallRequest) -> Result<RecallResponse, BackendError> {
 	let backend = state.backend.clone();
 	Ok(RecallResponse {
 		chunks: backend.recall(memory_name, &request.prompt, request.n.unwrap_or(1)).await?,

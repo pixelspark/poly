@@ -1,4 +1,4 @@
-use llm::{samplers::TopPTopK, InferenceError, InferenceParameters, TokenBias, TokenizationError};
+use llm::{samplers::TopPTopK, InferenceError, InferenceParameters, TokenBias, TokenId, TokenizationError};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use thiserror::Error;
@@ -26,6 +26,17 @@ pub struct SessionAndPromptRequest {
 #[derive(Serialize, Clone, Debug, Default)]
 pub struct EmbeddingResponse {
 	pub embedding: Vec<f32>,
+}
+
+#[derive(Serialize, Clone, Debug, Default)]
+pub struct TokenizationResponse {
+	pub tokens: Vec<TokenResponse>,
+}
+
+#[derive(Serialize, Clone, Debug, Default)]
+pub struct TokenResponse {
+	pub text: String,
+	pub token: TokenId,
 }
 
 impl From<TaskConfig> for InferenceParameters {
@@ -75,7 +86,7 @@ pub struct StatusResponse {
 }
 
 #[derive(Error, Debug)]
-pub enum GenerateError {
+pub enum BackendError {
 	#[error("task not found: {0}")]
 	TaskNotFound(String),
 
@@ -105,8 +116,8 @@ pub enum GenerateError {
 	InvalidChunkSeparator(String),
 }
 
-impl From<InferenceError> for GenerateError {
-	fn from(e: InferenceError) -> GenerateError {
-		GenerateError::InferenceError(e.to_string())
+impl From<InferenceError> for BackendError {
+	fn from(e: InferenceError) -> BackendError {
+		BackendError::InferenceError(e.to_string())
 	}
 }
