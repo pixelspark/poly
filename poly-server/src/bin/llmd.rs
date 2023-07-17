@@ -72,7 +72,7 @@ async fn main() {
 		cors_layer = cors_layer.allow_origin(Any);
 	}
 	cors_layer = cors_layer.allow_headers([CONTENT_TYPE, AUTHORIZATION]);
-	cors_layer = cors_layer.allow_methods([Method::GET, Method::POST, Method::OPTIONS, Method::PUT]);
+	cors_layer = cors_layer.allow_methods([Method::GET, Method::POST, Method::OPTIONS, Method::PUT, Method::DELETE]);
 
 	let pbar = ProgressBarProgress::new();
 	let backend = Arc::new(Backend::from(config.backend_config.clone(), Some(Arc::new(pbar))).await);

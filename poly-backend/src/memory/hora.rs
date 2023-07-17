@@ -64,6 +64,15 @@ impl Memory for HoraMemory {
 		assert_eq!(embedding.len(), index.dimension());
 		Ok(index.search(embedding, top_n))
 	}
+
+	async fn clear(&self) -> Result<(), MemoryError> {
+		let mut index = self.index.lock().await;
+		index.clear();
+		if let Some(ref path) = self.path {
+			index.dump(path.to_str().unwrap()).unwrap();
+		}
+		Ok(())
+	}
 }
 
 #[cfg(test)]

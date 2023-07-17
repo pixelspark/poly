@@ -284,6 +284,14 @@ impl Backend {
 		})
 	}
 
+	pub async fn forget(&self, memory_name: &str) -> Result<(), GenerateError> {
+		if !self.memories.contains_key(memory_name) {
+			return Err(GenerateError::MemoryNotFound(memory_name.to_string()));
+		}
+		let memory = self.memories.get(memory_name).unwrap();
+		memory.clear().await.map_err(GenerateError::Memory)
+	}
+
 	pub async fn recall(&self, memory_name: &str, prompt: &str, top_n: usize) -> Result<Vec<String>, GenerateError> {
 		if !self.memories.contains_key(memory_name) {
 			return Err(GenerateError::MemoryNotFound(memory_name.to_string()));

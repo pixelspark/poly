@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use qdrant_client::prelude::*;
+use qdrant_client::{prelude::*, qdrant::PointsSelector};
 use serde_json::json;
 
 use super::{Memory, MemoryError};
@@ -62,5 +62,13 @@ impl Memory for QdrantMemory {
 			.map_err(|x| MemoryError::Storage(x.to_string()))?;
 
 		Ok(search_result.result.into_iter().map(|r| r.payload["text"].to_string()).collect())
+	}
+
+	async fn clear(&self) -> Result<(), MemoryError> {
+		self.client
+			.delete_points(self.collection_name.to_string(), &PointsSelector::default(), None)
+			.await
+			.map_err(|x| MemoryError::Storage(x.to_string()))?;
+		Ok(())
 	}
 }

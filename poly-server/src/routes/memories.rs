@@ -5,7 +5,7 @@ use axum::{
 	http::{Request, StatusCode},
 	middleware::Next,
 	response::IntoResponse,
-	routing::{get, post, put},
+	routing::{delete, get, post, put},
 	Extension, Json, Router,
 };
 use poly_backend::types::MemoriesResponse;
@@ -21,6 +21,7 @@ pub fn router() -> Router<Arc<Server>, axum::body::Body> {
 	Router::new().route("/", get(memories_handler)).nest(
 		"/:memory",
 		Router::new()
+			.route("/", delete(delete_memory_items_handler))
 			.route("/", get(get_memory_recall_handler))
 			.route("/", post(post_memory_recall_handler))
 			.route("/", put(put_memory_ingest_handler))
@@ -44,6 +45,9 @@ pub struct RecallRequest {
 pub struct RecallResponse {
 	pub chunks: Vec<String>,
 }
+
+#[derive(Serialize)]
+pub struct ForgetResponse {}
 
 #[derive(Serialize)]
 pub struct RememberResponse {}
@@ -76,6 +80,14 @@ async fn put_memory_ingest_handler(
 			.await;
 	}
 	Ok(Json(RememberResponse {}))
+}
+
+async fn delete_memory_items_handler(
+	State(state): State<Arc<Server>>,
+	Path(memory_name): Path<String>,
+) -> Result<Json<ForgetResponse>, GenerateError> {
+	state.backend.forget(&memory_name).await?;
+	Ok(Json(ForgetResponse {}))
 }
 
 async fn post_memory_recall_handler(

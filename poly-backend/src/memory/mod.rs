@@ -27,6 +27,9 @@ pub trait Memory: Send + Sync {
 
 	/// Retrieve relevant chunks from memory given an embedding. At most `top_n` chunks will be returned
 	async fn get(&self, embedding: &[f32], top_n: usize) -> Result<Vec<String>, MemoryError>;
+
+	/// Clear the memory
+	async fn clear(&self) -> Result<(), MemoryError>;
 }
 
 #[derive(Deserialize, Debug, Clone, Serialize)]
