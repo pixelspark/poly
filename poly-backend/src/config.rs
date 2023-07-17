@@ -61,6 +61,21 @@ pub struct ModelConfig {
 	/// Whether to use GPU acceleration, if available
 	#[serde(default = "default_use_gpu")]
 	pub use_gpu: bool,
+
+	/// Number of layers to offload to the GPU (ignored when `use_gpu` is false; when this is `None`, all layers wil
+	///  be offloaded. For Metal, all layers will always be offloaded regardless of this setting)
+	pub gpu_layers: Option<usize>,
+
+	/// Controls batch/chunk size for prompt ingestion in [InferenceSession::feed_prompt].
+	///
+	/// This is the number of tokens that will be ingested at once. This is useful for
+	/// trying to speed up the ingestion of prompts, as it allows for parallelization.
+	/// However, you will be fundamentally limited by your machine's ability to evaluate
+	/// the transformer model, so increasing the batch size will not always help.
+	///
+	/// A reasonable default value is 8.
+	#[serde(default = "default_batch_size")]
+	pub batch_size: usize,
 }
 
 const fn default_use_gpu() -> bool {
@@ -152,17 +167,6 @@ pub struct TaskConfig {
 	/// The number of tokens to consider for the repetition penalty.
 	#[serde(default = "default_repetition_penalty_last_n")]
 	pub repetition_penalty_last_n: usize,
-
-	/// Controls batch/chunk size for prompt ingestion in [InferenceSession::feed_prompt].
-	///
-	/// This is the number of tokens that will be ingested at once. This is useful for
-	/// trying to speed up the ingestion of prompts, as it allows for parallelization.
-	/// However, you will be fundamentally limited by your machine's ability to evaluate
-	/// the transformer model, so increasing the batch size will not always help.
-	///
-	/// A reasonable default value is 8.
-	#[serde(default = "default_batch_size")]
-	pub batch_size: usize,
 
 	/// Sequences that when they occur end generation (just like end-of-text token)
 	#[serde(default = "default_stop_sequences")]

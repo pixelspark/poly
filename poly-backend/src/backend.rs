@@ -3,11 +3,8 @@ use std::{
 	sync::{Arc, Mutex},
 };
 
-use llm::{
-	samplers::TopPTopK, InferenceParameters, InferenceSessionConfig, InferenceStats, Model, ModelParameters, OutputRequest, Prompt, TokenId,
-	TokenizerSource,
-};
 pub use llm::{InferenceFeedback, InferenceResponse};
+use llm::{InferenceParameters, InferenceSessionConfig, InferenceStats, Model, ModelParameters, OutputRequest, Prompt, TokenId, TokenizerSource};
 use tokio::task::spawn_blocking;
 
 use crate::{
@@ -33,6 +30,7 @@ pub struct Backend {
 
 impl Backend {
 	pub fn from(config: BackendConfig, mut load_progress: impl FnMut(f64)) -> Backend {
+		tracing::info!(metal = cfg!(feature = "metal"), "backend instantiating");
 		let mut backend = Backend {
 			config,
 			models: HashMap::new(),
@@ -43,11 +41,20 @@ impl Backend {
 		// Load models
 		let n_models = backend.config.models.len();
 		for (index, (model_name, model_config)) in backend.config.models.iter().enumerate() {
+			// Warn about invalid configurations
+			if !model_config.use_gpu && model_config.gpu_layers.is_some() {
+				tracing::warn!("gpu_layers set but ignored because use_gpu is not set to true");
+			}
+			if cfg!(feature = "metal") && model_config.use_gpu && model_config.gpu_layers.is_some() {
+				tracing::warn!("gpu_layers set but ignored because with the Metal backend, all layers are run on the GPU");
+			}
+
 			let params = ModelParameters {
 				prefer_mmap: true,
 				context_size: model_config.context_size,
 				lora_adapters: None,
 				use_gpu: model_config.use_gpu,
+				gpu_layers: model_config.gpu_layers,
 			};
 
 			let model = Arc::new(
@@ -115,16 +122,11 @@ impl Backend {
 
 		let model = self.models.get(model_name).unwrap();
 		let inference_config = InferenceSessionConfig {
-			use_gpu: self.config.models[model_name].use_gpu,
+			n_threads: self.config.models[model_name].threads_per_session,
+			n_batch: 8,
 			..InferenceSessionConfig::default()
 		};
 		let mut session = model.start_session(inference_config);
-		let inference_parameters: InferenceParameters = InferenceParameters {
-			n_threads: self.config.models[model_name].threads_per_session,
-			n_batch: 8,
-			sampler: Arc::new(TopPTopK::default()),
-		};
-
 		let mut output_request = OutputRequest {
 			embeddings: Some(Vec::new()),
 			all_logits: None,
@@ -138,7 +140,7 @@ impl Backend {
 			.iter()
 			.map(|(_, tok)| *tok)
 			.collect::<Vec<_>>();
-		model.evaluate(&mut session, &inference_parameters, &query_token_ids, &mut output_request);
+		model.evaluate(&mut session, &query_token_ids, &mut output_request);
 		Ok(EmbeddingResponse {
 			embedding: output_request.embeddings.unwrap(),
 		})
@@ -225,23 +227,19 @@ impl Backend {
 		tracing::debug!(n_tokens = tokens.len(), ?text, "memorize chunk");
 
 		let inference_config = InferenceSessionConfig {
-			use_gpu: model_config.use_gpu,
+			n_threads: model_config.threads_per_session,
+			n_batch: model_config.batch_size,
 			..InferenceSessionConfig::default()
 		};
 
 		let mut session = model.start_session(inference_config);
-		let inference_parameters: InferenceParameters = InferenceParameters {
-			n_threads: model_config.threads_per_session,
-			n_batch: 8,
-			sampler: Arc::new(TopPTopK::default()),
-		};
 
 		let embeddings = spawn_blocking(move || {
 			let mut output_request = OutputRequest {
 				embeddings: Some(Vec::new()),
 				all_logits: None,
 			};
-			model.evaluate(&mut session, &inference_parameters, &tokens, &mut output_request);
+			model.evaluate(&mut session, &tokens, &mut output_request);
 			output_request.embeddings.unwrap()
 		})
 		.await
@@ -263,21 +261,20 @@ impl Backend {
 		let memory = task_config.memorization.as_ref().map(|mc| self.memories.get(&mc.memory).unwrap());
 
 		let model = self.models.get(&task_config.model).unwrap();
-		let inference_config = InferenceSessionConfig {
-			use_gpu: self.config.models[&task_config.model].use_gpu,
+		let n_threads = self.config.models[&task_config.model].threads_per_session;
+		let inference_config: InferenceSessionConfig = InferenceSessionConfig {
+			n_threads,
+			n_batch: self.config.models[&task_config.model].batch_size,
 			..InferenceSessionConfig::default()
 		};
 		let mut session = model.start_session(inference_config);
-
-		let mut inference_parameters: InferenceParameters = task_config.clone().into();
-		inference_parameters.n_threads = self.config.models[&task_config.model].threads_per_session;
+		let inference_parameters: InferenceParameters = task_config.clone().into();
 
 		if let Some(ref prelude_prompt) = task_config.prelude {
 			if !prelude_prompt.is_empty() {
 				tracing::debug!("feeding prelude prompt: '{prelude_prompt}'");
 				session.feed_prompt(
 					model.as_ref().as_ref(),
-					&inference_parameters,
 					Prompt::Text(&prelude_prompt.clone()),
 					&mut OutputRequest::default(),
 					|r| -> Result<InferenceFeedback, GenerateError> {
@@ -296,6 +293,7 @@ impl Backend {
 			task_config: task_config.clone(),
 			stats: self.stats.clone(),
 			task_name: task_name.to_string(),
+			n_threads,
 			backend,
 		})
 	}

@@ -39,11 +39,7 @@ impl From<TaskConfig> for InferenceParameters {
 			bias_tokens: TokenBias::empty(),
 		};
 
-		InferenceParameters {
-			n_batch: val.batch_size,
-			sampler: Arc::new(sampler),
-			..Default::default()
-		}
+		InferenceParameters { sampler: Arc::new(sampler) }
 	}
 }
 

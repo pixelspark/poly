@@ -363,7 +363,6 @@ fn test_json_bias(schema: JsonSchema, model: &dyn Model) {
 		session
 			.feed_prompt(
 				model,
-				&InferenceParameters::default(),
 				Prompt::Text("Feyenoord is better than Ajax. "),
 				&mut OutputRequest::default(),
 				|_| -> Result<InferenceFeedback, BiaserError> { Ok(InferenceFeedback::Continue) },
@@ -396,10 +395,7 @@ fn test_json_bias(schema: JsonSchema, model: &dyn Model) {
 				bias_tokens: TokenBias::new(next_valid_tokens),
 				..Default::default()
 			};
-			let inference_params = InferenceParameters {
-				sampler: Arc::new(sampler),
-				..InferenceParameters::default()
-			};
+			let inference_params = InferenceParameters { sampler: Arc::new(sampler) };
 
 			match session.infer_next_token(model, &inference_params, &mut OutputRequest::default(), &mut rng) {
 				Ok(out) => {

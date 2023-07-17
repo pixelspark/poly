@@ -34,6 +34,7 @@ pub struct BackendSession {
 	pub(crate) stats: Arc<BackendStats>,
 	pub(crate) task_name: String,
 	pub(crate) backend: Arc<Backend>,
+	pub(crate) n_threads: usize,
 }
 
 impl Debug for BackendSession {
@@ -91,7 +92,7 @@ impl BackendSession {
 			"completion finished; {prompt_tokens_per_s:.3} t/s prompt, {predict_tokens_per_s:.3} t/s predict; stats: {:?}",
 			stats
 		);
-		self.stats.add(&self.task_name, &stats, self.inference_parameters.n_threads);
+		self.stats.add(&self.task_name, &stats, self.n_threads);
 
 		// Perform memorization
 		if let Some(memorization) = &self.task_config.memorization {
@@ -176,7 +177,6 @@ impl BackendSession {
 		let start = Instant::now();
 		self.session.feed_prompt(
 			self.model.as_ref().as_ref(),
-			&InferenceParameters::default(),
 			Prompt::Tokens(&tokens),
 			&mut OutputRequest::default(),
 			|_| -> Result<InferenceFeedback, GenerateError> { Ok(InferenceFeedback::Continue) },
@@ -228,7 +228,6 @@ impl BackendSession {
 			let start = Instant::now();
 			self.session.feed_prompt(
 				self.model.as_ref().as_ref(),
-				&InferenceParameters::default(),
 				Prompt::Text(bias_prompt.as_str()),
 				&mut OutputRequest::default(),
 				|_| -> Result<InferenceFeedback, GenerateError> { Ok(InferenceFeedback::Continue) },
@@ -289,7 +288,6 @@ impl BackendSession {
 					let start = Instant::now();
 					self.session.feed_prompt(
 						self.model.as_ref().as_ref(),
-						&inference_params,
 						Prompt::Tokens(&[only_possible_token as TokenId]),
 						&mut OutputRequest::default(),
 						|_| -> Result<InferenceFeedback, GenerateError> { Ok(InferenceFeedback::Continue) },
