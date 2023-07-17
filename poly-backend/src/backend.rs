@@ -98,7 +98,7 @@ impl Backend {
 			let params = ModelParameters {
 				prefer_mmap: true,
 				context_size: model_config.context_size,
-				lora_adapters: None,
+				lora_adapters: model_config.lora_adapters.clone(),
 				use_gpu: model_config.use_gpu,
 				gpu_layers: model_config.gpu_layers,
 			};

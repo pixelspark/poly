@@ -24,12 +24,14 @@ model = "gpt2dutch"
 
 [models.pythia160m]
 model_path  = "./data/pythia-160m-q4_0.bin"
+url = "https://huggingface.co/rustformers/pythia-ggml/resolve/main/pythia-160m-q4_0-ggjt.bin"
 architecture = "gptneox"
 threads_per_session = 1
 context_size = 2048
 
 [models.mpt_chat]
 model_path = "mpt-7b-chat-q5_1-ggjt.bin"
+lora_adapters = [] # Paths to LoRA adapters to apply
 architecture = "mpt"
 threads_per_session = 8
 

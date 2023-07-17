@@ -54,6 +54,10 @@ pub struct ModelConfig {
 	///  is not specified (in which case a cache location will be used)
 	pub url: Option<String>,
 
+	/// The [LoRA](https://arxiv.org/abs/2106.09685) adapters to use when loading the model. Note that these cannot currently
+	/// be downloaded automatically on-demand.
+	pub lora_adapters: Option<Vec<PathBuf>>,
+
 	/// Threads per session
 	#[serde(default = "default_threads_per_session")]
 	pub threads_per_session: usize,
