@@ -24,7 +24,7 @@ impl Server {
 		tokio::spawn(async move {
 			tracing::info!("starting ingest worker");
 			while let Some(item) = rx.recv().await {
-				tracing::debug!(?item, "ingest");
+				tracing::trace!(?item, "ingest");
 				match ingest_backend.memorize(&item.memory_name, &item.plaintext).await {
 					Ok(_) => {}
 					Err(e) => tracing::error!("error memorizing: {e}"),

@@ -330,6 +330,7 @@ impl Backend {
 
 	pub async fn memorize(&self, memory_name: &str, data: &str) -> Result<(), BackendError> {
 		// Obtain memorization configuration
+		tracing::info!(memory_name, data_length = data.len(), "memorize");
 		let memory_config = &self.config.memories[memory_name];
 		let memory = self.memories[memory_name].clone();
 		let model_name = &memory_config.embedding_model;
@@ -414,7 +415,7 @@ impl Backend {
 		memory: Arc<Box<dyn Memory>>,
 	) -> Result<(), MemoryError> {
 		// Calculate embedding
-		tracing::debug!(n_tokens = tokens.len(), ?text, "memorize chunk");
+		tracing::trace!(n_tokens = tokens.len(), ?text, "memorize chunk");
 
 		let inference_config = InferenceSessionConfig {
 			n_threads: model_config.threads_per_session,

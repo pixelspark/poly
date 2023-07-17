@@ -70,8 +70,10 @@ impl MemoryStoreConfig {
 
 type TokenWithCharacters = (Vec<u8>, TokenId);
 
+/// Apply successive separators to a chunk of text until it fits in a specific number of tokens. When there is no
+/// separator anymore, just chunk.
 pub fn hierarchically_chunk(tokens: Vec<TokenWithCharacters>, separators: &[TokenId], max_chunk_tokens: usize) -> Vec<Vec<TokenWithCharacters>> {
-	tracing::debug!(n_tokens = tokens.len(), ?separators, max_chunk_tokens, "hierarchically chunk");
+	tracing::trace!(n_tokens = tokens.len(), ?separators, max_chunk_tokens, "hierarchically chunk");
 	// If the full chunk is small enough, no need to split anything
 	if tokens.len() <= max_chunk_tokens {
 		vec![tokens]
