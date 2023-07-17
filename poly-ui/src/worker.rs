@@ -90,7 +90,7 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 		// Load backend
 		let backend = Arc::new({
 			let (ptx, mut prx) = tokio::sync::mpsc::channel(16);
-			let backend_future = Backend::from(config, Some(ptx));
+			let backend_future = Backend::from(config, Some(Arc::new(ptx)));
 
 			while let Some(progress) = prx.recv().await {
 				output.send(LLMWorkerEvent::Loading(progress)).await.unwrap();

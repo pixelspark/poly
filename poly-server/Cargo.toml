@@ -32,4 +32,5 @@ poly-bias = "0.1.0"
 poly-backend = "0.1.0"
 poly-extract = { version = "0.1.0", features=["axum"] }
 jsonwebtoken = "8.3.0"
+indicatif = "0.17.5"
 

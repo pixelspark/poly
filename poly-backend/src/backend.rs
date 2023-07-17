@@ -33,8 +33,37 @@ pub struct Backend {
 
 const CACHE_MODELS_DIR: &str = "models";
 
+/// Trait that allows receiving progress information
+pub trait Progress: Send + Sync {
+	fn report_progress(&self, p: f64);
+}
+
+impl Progress for Sender<f64> {
+	fn report_progress(&self, p: f64) {
+		let _ = self.blocking_send(p);
+	}
+}
+
+struct NestedProgress {
+	b: f64,
+	a: f64,
+	inner: Arc<dyn Progress>,
+}
+
+impl Progress for NestedProgress {
+	fn report_progress(&self, p: f64) {
+		self.inner.report_progress((p * self.a) + self.b);
+	}
+}
+
+impl dyn Progress {
+	fn nested(self: Arc<dyn Progress>, a: f64, b: f64) -> Arc<dyn Progress> {
+		Arc::new(NestedProgress { inner: self.clone(), a, b })
+	}
+}
+
 impl Backend {
-	pub async fn from(mut config: BackendConfig, progress: Option<Sender<f64>>) -> Backend {
+	pub async fn from(mut config: BackendConfig, progress: Option<Arc<dyn Progress>>) -> Backend {
 		// Determine cache path
 		if config.cache_path.is_none() {
 			if let Some(pd) = ProjectDirs::from("nl.dialogic", "Dialogic", "Poly") {
@@ -63,6 +92,8 @@ impl Backend {
 		// Load models
 		let n_models = backend.config.models.len();
 		for (index, (model_name, model_config)) in backend.config.models.iter().enumerate() {
+			let model_progress = progress.clone().map(|p| p.nested(1.0 / n_models as f64, index as f64 / n_models as f64));
+
 			// Warn about invalid configurations
 			if !model_config.use_gpu && model_config.gpu_layers.is_some() {
 				tracing::warn!("gpu_layers set but ignored because use_gpu is not set to true");
@@ -80,12 +111,17 @@ impl Backend {
 					.join(format!("{model_name}.bin"))
 			});
 
+			let mut has_download = false;
 			if !actual_model_path.exists() {
+				let download_progress = model_progress.clone().map(|x| x.nested(0.5, 0.0));
 				// See if we can download this file
 				if let Some(ref url) = model_config.url {
 					// Download
 					tracing::info!("downloading model {model_name} from {url}");
-					Self::download_model(url, &actual_model_path).await.expect("could not download model");
+					has_download = true;
+					Self::download_model(url, &actual_model_path, download_progress)
+						.await
+						.expect("could not download model");
 					if !actual_model_path.exists() {
 						panic!("model file not found for model {model_name} at path {actual_model_path:?} even after downloading");
 					}
@@ -106,7 +142,8 @@ impl Backend {
 			// Actually load the model
 			let model_config = model_config.clone();
 			let model_name_copy = model_name.clone();
-			let progress = progress.clone();
+
+			let model_load_progress = model_progress.map(|x| x.nested(if has_download { 0.5 } else { 1.0 }, if has_download { 0.5 } else { 0.0 }));
 
 			let model = spawn_blocking(move || {
 				Arc::new(
@@ -126,8 +163,8 @@ impl Backend {
 								} => (current_tensor as f64) / (tensor_count as f64),
 								llm::LoadProgress::Loaded { .. } => 1.0,
 							};
-							if let Some(p) = progress.as_ref() {
-								p.blocking_send((index as f64 + fp) / n_models as f64).unwrap()
+							if let Some(ref p) = model_load_progress {
+								p.report_progress((index as f64 + fp) / n_models as f64);
 							}
 							trace!("Loading model {model_name_copy}: {load_progress:#?}");
 						},
@@ -154,6 +191,8 @@ impl Backend {
 			backend.memories.insert(memory_name.clone(), Arc::new(mem));
 		}
 
+		info!("All memories loaded");
+
 		// Verify tasks
 		for (task_name, task_config) in &backend.config.tasks {
 			if !backend.models.contains_key(&task_config.model) {
@@ -167,11 +206,17 @@ impl Backend {
 			}
 		}
 
+		info!("All tasks loaded");
+
+		if let Some(ref p) = progress {
+			p.report_progress(1.0);
+		}
+
 		backend
 	}
 
 	/// Downloads a file to the indicated location
-	async fn download_model(url: &str, target_path: &PathBuf) -> Result<(), String> {
+	async fn download_model(url: &str, target_path: &PathBuf, progress: Option<Arc<dyn Progress>>) -> Result<(), String> {
 		let client = reqwest::Client::new();
 		let res = client.get(url).send().await.map_err(|x| x.to_string())?;
 
@@ -189,6 +234,9 @@ impl Backend {
 			file.write_all(&chunk).await.or(Err("Error while writing to file".to_string()))?;
 			downloaded += chunk.len();
 			tracing::debug!(url, "download: {}/{} bytes", downloaded, total_size);
+			if let Some(ref p) = progress {
+				p.report_progress(downloaded as f64 / total_size as f64);
+			}
 		}
 		if downloaded != total_size {
 			tracing::debug!(
