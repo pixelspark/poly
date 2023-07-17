@@ -35,6 +35,9 @@
           <button :disabled="!memory || storing" @click="upload">
             Upload file(s)...
           </button>
+          <button :disabled="!memory || storing" @click="menInBlack">
+            Clear entire memory
+          </button>
 
           <div>
             <input type="checkbox" v-model="wait" />Wait for completion when
@@ -93,6 +96,26 @@ async function storeFile(mime: string, body: string | File) {
       method: "PUT",
       headers,
       body,
+    });
+    storing.value = false;
+  }
+}
+
+async function menInBlack() {
+  if (memory.value && !storing.value) {
+    storing.value = true;
+    const headers: Record<string, any> = {};
+    if (apiKey.value.length > 0) {
+      headers["Authorization"] = "Bearer " + apiKey.value;
+    }
+    const url = new URL(
+      "v1/memory/" + encodeURIComponent(memory.value),
+      base.value
+    );
+
+    await fetch(url, {
+      method: "DELETE",
+      headers,
     });
     storing.value = false;
   }
