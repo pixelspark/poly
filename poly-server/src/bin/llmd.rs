@@ -57,7 +57,7 @@ async fn main() {
 	cors_layer = cors_layer.allow_methods([Method::GET, Method::POST, Method::OPTIONS, Method::PUT]);
 
 	let state = Arc::new(Server {
-		backend: Arc::new(Backend::from(config.backend_config.clone(), |_progress| {})),
+		backend: Arc::new(Backend::from(config.backend_config.clone(), None).await),
 		config,
 	});
 

@@ -46,3 +46,13 @@ store = { qdrant = { url = "http://localhost:6334", collection = "test" } }
 chunk_separators = ["."]
 chunk_max_tokens = 255
 ```
+
+### Model caching
+
+If a `url` is specified in the model configuration, the model file will be automatically downloaded from the specified URL
+if it cannot be found locally (either at the specified `model_path` or in the platform-specific cache directory).
+
+Notes:
+
+- Models are stored in the cache directory by their model key. If the model key changes, the model may be redownloaded.
+- Currently, resuming incomplete downloads is not supported, but incomplete downloads may be left in the cache directory.

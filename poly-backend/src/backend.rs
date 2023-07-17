@@ -1,11 +1,14 @@
 use std::{
 	collections::HashMap,
+	path::PathBuf,
 	sync::{Arc, Mutex},
 };
 
+use directories::ProjectDirs;
+use futures_util::StreamExt;
 pub use llm::{InferenceFeedback, InferenceResponse};
 use llm::{InferenceParameters, InferenceSessionConfig, InferenceStats, Model, ModelParameters, OutputRequest, Prompt, TokenId, TokenizerSource};
-use tokio::task::spawn_blocking;
+use tokio::{fs::File, io::AsyncWriteExt, sync::mpsc::Sender, task::spawn_blocking};
 
 use crate::{
 	config::{BackendConfig, ModelConfig},
@@ -28,9 +31,28 @@ pub struct Backend {
 	pub stats: Arc<BackendStats>,
 }
 
+const CACHE_MODELS_DIR: &str = "models";
+
 impl Backend {
-	pub fn from(config: BackendConfig, mut load_progress: impl FnMut(f64)) -> Backend {
-		tracing::info!(metal = cfg!(feature = "metal"), "backend instantiating");
+	pub async fn from(mut config: BackendConfig, progress: Option<Sender<f64>>) -> Backend {
+		// Determine cache path
+		if config.cache_path.is_none() {
+			if let Some(pd) = ProjectDirs::from("nl.dialogic", "Dialogic", "Poly") {
+				config.cache_path = Some(pd.cache_dir().to_path_buf());
+			}
+		}
+
+		// Ensure cache directory exists (if there is one)
+		let cache_path = config.cache_path.clone();
+		if let Some(ref cache_path) = cache_path {
+			tokio::fs::create_dir_all(cache_path.join(CACHE_MODELS_DIR)).await.unwrap();
+		}
+
+		tracing::info!(
+			metal = cfg!(feature = "metal"),
+			cache_path = cache_path.as_ref().map(|x| x.to_str().map(|y| y.to_string())),
+			"backend instantiating"
+		);
 		let mut backend = Backend {
 			config,
 			models: HashMap::new(),
@@ -49,6 +71,30 @@ impl Backend {
 				tracing::warn!("gpu_layers set but ignored because with the Metal backend, all layers are run on the GPU");
 			}
 
+			// Check if we already have a copy of the model, or download it
+			let actual_model_path = model_config.model_path.clone().unwrap_or_else(|| {
+				cache_path
+					.clone()
+					.expect("cache path is set when models without path are specified")
+					.join(CACHE_MODELS_DIR)
+					.join(format!("{model_name}.bin"))
+			});
+
+			if !actual_model_path.exists() {
+				// See if we can download this file
+				if let Some(ref url) = model_config.url {
+					// Download
+					tracing::info!("downloading model {model_name} from {url}");
+					Self::download_model(url, &actual_model_path).await.expect("could not download model");
+					if !actual_model_path.exists() {
+						panic!("model file not found for model {model_name} at path {actual_model_path:?} even after downloading");
+					}
+				} else {
+					panic!("model file not found for model {model_name} at path {actual_model_path:?}");
+				}
+			}
+
+			// Set up hyperparameters
 			let params = ModelParameters {
 				prefer_mmap: true,
 				context_size: model_config.context_size,
@@ -57,29 +103,40 @@ impl Backend {
 				gpu_layers: model_config.gpu_layers,
 			};
 
-			let model = Arc::new(
-				llm::load_dynamic(
-					Some(model_config.architecture),
-					&model_config.model_path,
-					TokenizerSource::Embedded,
-					params,
-					|progress| {
-						let fp = match progress {
-							llm::LoadProgress::HyperparametersLoaded => 0.0,
-							llm::LoadProgress::ContextSize { .. } => 0.0,
-							llm::LoadProgress::LoraApplied { .. } => 0.0,
-							llm::LoadProgress::TensorLoaded {
-								current_tensor,
-								tensor_count,
-							} => (current_tensor as f64) / (tensor_count as f64),
-							llm::LoadProgress::Loaded { .. } => 1.0,
-						};
-						load_progress((index as f64 + fp) / n_models as f64);
-						trace!("Loading model {model_name}: {progress:#?}");
-					},
+			// Actually load the model
+			let model_config = model_config.clone();
+			let model_name_copy = model_name.clone();
+			let progress = progress.clone();
+
+			let model = spawn_blocking(move || {
+				Arc::new(
+					llm::load_dynamic(
+						Some(model_config.architecture),
+						&actual_model_path,
+						TokenizerSource::Embedded,
+						params,
+						|load_progress| {
+							let fp: f64 = match load_progress {
+								llm::LoadProgress::HyperparametersLoaded => 0.0,
+								llm::LoadProgress::ContextSize { .. } => 0.0,
+								llm::LoadProgress::LoraApplied { .. } => 0.0,
+								llm::LoadProgress::TensorLoaded {
+									current_tensor,
+									tensor_count,
+								} => (current_tensor as f64) / (tensor_count as f64),
+								llm::LoadProgress::Loaded { .. } => 1.0,
+							};
+							if let Some(p) = progress.as_ref() {
+								p.blocking_send((index as f64 + fp) / n_models as f64).unwrap()
+							}
+							trace!("Loading model {model_name_copy}: {load_progress:#?}");
+						},
+					)
+					.expect("load model"),
 				)
-				.expect("load model"),
-			);
+			})
+			.await
+			.unwrap();
 
 			backend.models.insert(model_name.clone(), model);
 			info!("Loaded model {} use_gpu={:?}", model_name, model_config.use_gpu);
@@ -111,6 +168,39 @@ impl Backend {
 		}
 
 		backend
+	}
+
+	/// Downloads a file to the indicated location
+	async fn download_model(url: &str, target_path: &PathBuf) -> Result<(), String> {
+		let client = reqwest::Client::new();
+		let res = client.get(url).send().await.map_err(|x| x.to_string())?;
+
+		let mut temp_path = target_path.clone();
+		temp_path.set_extension("download");
+		let mut file = File::create(&temp_path)
+			.await
+			.map_err(|x| format!("could not create temp file at {temp_path:?}: {x}"))?;
+		let total_size = res.content_length().ok_or(format!("Failed to get content length from '{}'", &url))? as usize;
+
+		let mut stream = res.bytes_stream();
+		let mut downloaded: usize = 0;
+		while let Some(item) = stream.next().await {
+			let chunk = item.or(Err("Error while downloading file".to_string()))?;
+			file.write_all(&chunk).await.or(Err("Error while writing to file".to_string()))?;
+			downloaded += chunk.len();
+			tracing::debug!(url, "download: {}/{} bytes", downloaded, total_size);
+		}
+		if downloaded != total_size {
+			tracing::debug!(
+				url,
+				"download completed, but size mismatches: {downloaded} downloaded bytes, {total_size} total size bytes",
+			);
+		}
+		tracing::debug!(url, "download completed");
+
+		// Move the temp file to the right location
+		tokio::fs::rename(temp_path, target_path).await.map_err(|x| x.to_string())?;
+		Ok(())
 	}
 
 	pub fn embedding(&self, model_name: &str, prompt: &PromptRequest) -> Result<EmbeddingResponse, GenerateError> {

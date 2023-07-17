@@ -74,10 +74,12 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 
 		// Update model paths
 		for (_k, model_config) in config.models.iter_mut() {
-			let model_path_str = model_config.model_path.to_str().unwrap();
-			// Paths that are prefixed with '@' are relative to the data folder
-			if model_path_str.starts_with('@') {
-				model_config.model_path = resource_path(model_path_str.strip_prefix('@').unwrap());
+			if let Some(ref model_path) = model_config.model_path {
+				let model_path_str = model_path.to_str().unwrap();
+				// Paths that are prefixed with '@' are relative to the data folder
+				if model_path_str.starts_with('@') {
+					model_config.model_path = Some(resource_path(model_path_str.strip_prefix('@').unwrap()));
+				}
 			}
 		}
 
@@ -88,11 +90,7 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 		// Load backend
 		let backend = Arc::new({
 			let (ptx, mut prx) = tokio::sync::mpsc::channel(16);
-			let backend_future = spawn_blocking(move || {
-				Backend::from(config, |progress| {
-					ptx.blocking_send(progress).unwrap();
-				})
-			});
+			let backend_future = Backend::from(config, Some(ptx));
 
 			while let Some(progress) = prx.recv().await {
 				output.send(LLMWorkerEvent::Loading(progress)).await.unwrap();
@@ -100,7 +98,7 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 				// tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 			}
 
-			backend_future.await.unwrap()
+			backend_future.await
 		});
 		let mut session = backend.start(&selected_task_name, &SessionRequest {}, backend.clone()).unwrap();
 

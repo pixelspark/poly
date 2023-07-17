@@ -48,7 +48,11 @@ pub struct ModelConfig {
 	pub architecture: ModelArchitecture,
 
 	/// Path to the model file
-	pub model_path: PathBuf,
+	pub model_path: Option<PathBuf>,
+
+	/// URL where to download the model from. This is used in case no file is found at `model_path` or when `model_path`
+	///  is not specified (in which case a cache location will be used)
+	pub url: Option<String>,
 
 	/// Threads per session
 	#[serde(default = "default_threads_per_session")]
@@ -215,4 +219,7 @@ pub struct BackendConfig {
 
 	/// Memories
 	pub memories: HashMap<String, MemoryConfig>,
+
+	/// Directory to store downloaded assets
+	pub cache_path: Option<PathBuf>,
 }
