@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
 	api::{GenerateError, JwtClaims},
-	middleware::Server,
+	server::{IngestItem, Server},
 };
 
 pub fn router() -> Router<Arc<Server>, axum::body::Body> {
@@ -23,7 +23,7 @@ pub fn router() -> Router<Arc<Server>, axum::body::Body> {
 		Router::new()
 			.route("/", get(get_memory_recall_handler))
 			.route("/", post(post_memory_recall_handler))
-			.route("/", put(put_memory_remember_handler))
+			.route("/", put(put_memory_ingest_handler))
 			.layer(axum::middleware::from_fn(authorize)),
 	)
 }
@@ -49,7 +49,7 @@ pub struct RecallResponse {
 pub struct RememberResponse {}
 
 #[derive(Deserialize)]
-pub struct RememberRequest {
+pub struct IngestRequest {
 	#[serde(default = "default_wait")]
 	pub wait: bool,
 }
@@ -58,24 +58,22 @@ const fn default_wait() -> bool {
 	true
 }
 
-async fn put_memory_remember_handler(
+async fn put_memory_ingest_handler(
 	State(state): State<Arc<Server>>,
 	Path(memory_name): Path<String>,
-	Query(params): Query<RememberRequest>,
+	Query(params): Query<IngestRequest>,
 	Plaintext(body): Plaintext,
 ) -> Result<Json<RememberResponse>, GenerateError> {
 	if params.wait {
 		state.backend.memorize(&memory_name, &body).await?;
 	} else {
 		// Defer to a background job
-		tokio::task::spawn(async move {
-			tracing::info!("spawning task to memorize document");
-			match state.backend.memorize(&memory_name, &body).await {
-				Ok(_) => {}
-				Err(e) => tracing::error!("error memorizing: {e}"),
-			}
-			tracing::info!("ending task to memorize document");
-		});
+		state
+			.ingest(IngestItem {
+				memory_name,
+				plaintext: body,
+			})
+			.await;
 	}
 	Ok(Json(RememberResponse {}))
 }

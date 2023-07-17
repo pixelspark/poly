@@ -26,7 +26,7 @@ use tracing::{debug, trace};
 
 use crate::{
 	api::{GenerateError, JwtClaims},
-	middleware::Server,
+	server::Server,
 };
 
 pub fn router() -> Router<Arc<Server>, axum::body::Body> {

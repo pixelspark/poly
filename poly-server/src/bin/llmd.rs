@@ -11,8 +11,9 @@ use poly_backend::backend::{Backend, Progress};
 use poly_backend::types::{Status, StatusResponse};
 use poly_server::api::StatsResponse;
 use poly_server::config::{Args, Config};
-use poly_server::middleware::{authenticate, Server};
+use poly_server::middleware::authenticate;
 use poly_server::routes;
+use poly_server::server::Server;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -74,10 +75,8 @@ async fn main() {
 	cors_layer = cors_layer.allow_methods([Method::GET, Method::POST, Method::OPTIONS, Method::PUT]);
 
 	let pbar = ProgressBarProgress::new();
-	let state = Arc::new(Server {
-		backend: Arc::new(Backend::from(config.backend_config.clone(), Some(Arc::new(pbar))).await),
-		config,
-	});
+	let backend = Arc::new(Backend::from(config.backend_config.clone(), Some(Arc::new(pbar))).await);
+	let state = Arc::new(Server::new(backend, config));
 
 	// Set up API server
 	let app = Router::new()

@@ -10,15 +10,8 @@ use jsonwebtoken::Validation;
 
 use crate::{
 	api::{JwtClaims, KeyQuery},
-	config::Config,
+	server::Server,
 };
-
-use poly_backend::backend::Backend;
-
-pub struct Server {
-	pub backend: Arc<Backend>,
-	pub config: Config,
-}
 
 /// Middleware that authenticates a user using static pre-shared API keys or a JWT
 pub async fn authenticate<T>(
