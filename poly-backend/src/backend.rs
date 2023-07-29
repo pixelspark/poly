@@ -139,6 +139,7 @@ impl Backend {
 				lora_adapters: model_config.lora_adapters.clone(),
 				use_gpu: model_config.use_gpu,
 				gpu_layers: model_config.gpu_layers,
+				rope_overrides: None,
 			};
 
 			// Actually load the model
