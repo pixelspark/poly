@@ -89,16 +89,35 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 
 		// Load backend
 		let backend = Arc::new({
-			let (ptx, mut prx) = tokio::sync::mpsc::channel(16);
-			let backend_future = Backend::from(config, Some(Arc::new(ptx)));
+			println!("LLMWORKER");
+			let (ptx, mut prx) = tokio::sync::mpsc::channel(32);
+			let backend_future = Backend::from(config, Some(ptx));
 
-			while let Some(progress) = prx.recv().await {
-				output.send(LLMWorkerEvent::Loading(progress)).await.unwrap();
-				// For testing the loading progress bar
-				// tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-			}
+			let mut output2 = output.clone();
+			tokio::spawn(async move {
+				while let Some(progress) = prx.recv().await {
+					output2.send(LLMWorkerEvent::Loading(progress)).await.unwrap();
+				}
+			});
 
-			backend_future.await
+			// let backend;
+			// loop {
+			// 	println!("LLMWORKER2");
+			// 	tokio::select! {
+			// 		Some(progress) = prx.recv() => {
+			// 			println!("LLMWORKER3");
+			// 			output.send(LLMWorkerEvent::Loading(progress)).await.unwrap();
+			// 		},
+			// 		b = backend_future => {
+			// 			println!("LLNWORKER4");
+			// 			backend = b;
+			// 			break;
+			// 		}
+			// 	}
+			// }
+			let b = tokio::spawn(backend_future).await.unwrap();
+			println!("Backend future complete");
+			b
 		});
 		let mut session = backend.start(&selected_task_name, &SessionRequest {}, backend.clone()).unwrap();
 
