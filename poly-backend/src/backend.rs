@@ -104,6 +104,7 @@ impl Backend {
 				use_gpu: model_config.use_gpu,
 				gpu_layers: model_config.gpu_layers,
 				rope_overrides: None,
+				n_gqa: None,
 			};
 
 			// Actually load the model

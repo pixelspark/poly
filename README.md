@@ -20,6 +20,7 @@ Nice extras:
 Supported models include:
 
 - LLaMa and derivatives (Alpaca, Vicuna, Guanaco, etc.)
+- LLaMA2
 - RedPajamas
 - MPT
 - Orca-mini
@@ -50,6 +51,8 @@ memorization = { memory = "dutch_qdrant", retrieve = 2 }
 ```
 
 See [config.example.toml](./config.example.toml) for more example configurations.
+
+Custom samplers can be configured using a string-based description, see [here](https://github.com/rustformers/llm/blob/18b2a7d37e56220487e851a45badc46bf9dcb9d3/crates/llm-base/src/samplers.rs#L222). Any biaser (i.e. JSON biaser) is injected as first sampler in the chain.
 
 ## Concepts
 
@@ -189,5 +192,5 @@ GGML-->CUDA
 
 Specific licenses apply to the following files:
 
-- [./data/pythia-160m-q4_0.bin](./data/pythia-160m-q4_0.bin): Apache 2.0, source [here](https://huggingface.co/rustformers/pythia-ggml).
+- [./data/gpt2.bin](./data/gpt2.bin): MIT, source [here](https://huggingface.co/marella/gpt-2-ggml), license [here](https://github.com/marella/ctransformers/blob/main/LICENSE).
 - [./data/gpt2-small-dutch-f16.bin](./data/gpt2-small-dutch-f16.bin): Apache 2.0, source [here](https://huggingface.co/GroNLP/gpt2-small-dutch-embeddings), license [here](https://github.com/wietsedv/gpt2-recycle/blob/master/LICENSE).

@@ -1,7 +1,15 @@
+use llm::samplers::{
+	llm_samplers::{
+		configure::{SamplerChainBuilder, SamplerSlot},
+		samplers::{SampleRandDistrib, SampleRepetition, SampleTemperature, SampleTopK, SampleTopP},
+		types::SamplerChain,
+	},
+	ConfiguredSamplers,
+};
 pub use llm::ModelArchitecture;
 use poly_bias::json::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 use crate::memory::MemoryStoreConfig;
 
@@ -175,6 +183,33 @@ pub struct TaskConfig {
 	/// a biased response is generated.
 	pub bias_prompt: Option<String>,
 
+	/// Sequences that when they occur end generation (just like end-of-text token)
+	#[serde(default = "default_stop_sequences")]
+	pub stop_sequences: Vec<String>,
+
+	/// Sampler configuration
+	#[serde(flatten)]
+	pub sampler: SamplerConfig,
+
+	/// Memorization config
+	pub memorization: Option<TaskMemorizationConfig>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum SamplerConfig {
+	Advanced(AdvancedSamplerConfig),
+	Standard(StandardSamplerConfig),
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct AdvancedSamplerConfig {
+	// Samplers to apply
+	pub samplers: Vec<String>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct StandardSamplerConfig {
 	/// The top K words by score are kept during sampling.
 	#[serde(default = "default_top_k")]
 	pub top_k: usize,
@@ -196,13 +231,75 @@ pub struct TaskConfig {
 	/// The number of tokens to consider for the repetition penalty.
 	#[serde(default = "default_repetition_penalty_last_n")]
 	pub repetition_penalty_last_n: usize,
+}
 
-	/// Sequences that when they occur end generation (just like end-of-text token)
-	#[serde(default = "default_stop_sequences")]
-	pub stop_sequences: Vec<String>,
+impl SamplerConfig {
+	pub(crate) fn sampler_chain(&self) -> SamplerChain {
+		match self {
+			SamplerConfig::Standard(st) => st.sampler_chain(),
+			SamplerConfig::Advanced(a) => a.sampler_chain(),
+		}
+	}
+}
 
-	/// Memorization config
-	pub memorization: Option<TaskMemorizationConfig>,
+impl AdvancedSamplerConfig {
+	pub(crate) fn sampler_chain(&self) -> SamplerChain {
+		let sampler_options = self
+			.samplers
+			.iter()
+			.map(|s| s.trim())
+			.filter(|s| !s.is_empty())
+			.map(|s| "/".to_string() + s)
+			.collect::<String>();
+		let configured_samplers = ConfiguredSamplers::from_str(&sampler_options).expect("valid sampler chain");
+		configured_samplers.builder.into_chain()
+	}
+}
+
+impl StandardSamplerConfig {
+	pub(crate) fn sampler_chain(&self) -> SamplerChain {
+		let StandardSamplerConfig {
+			repeat_penalty,
+			repetition_penalty_last_n,
+			top_k,
+			top_p,
+			temperature,
+			..
+		} = self.clone();
+
+		SamplerChainBuilder::from([
+			(
+				"repetition",
+				SamplerSlot::new_chain(
+					move || Box::new(SampleRepetition::default().penalty(repeat_penalty).last_n(repetition_penalty_last_n)),
+					[],
+				),
+			),
+			(
+				"topk",
+				SamplerSlot::new_single(move || Box::new(SampleTopK::default().k(top_k)), Option::<SampleTopK>::None),
+			),
+			(
+				"topp",
+				SamplerSlot::new_single(move || Box::new(SampleTopP::default().p(top_p)), Option::<SampleTopP>::None),
+			),
+			(
+				"temperature",
+				SamplerSlot::new_single(
+					move || Box::new(SampleTemperature::default().temperature(temperature)),
+					Option::<SampleTemperature>::None,
+				),
+			),
+			("randdistrib", SamplerSlot::new_static(|| Box::<SampleRandDistrib>::default())),
+		])
+		.into_chain()
+	}
+}
+
+impl TaskConfig {
+	pub(crate) fn sampler_chain(&self) -> SamplerChain {
+		self.sampler.sampler_chain()
+	}
 }
 
 const fn default_stop_sequences() -> Vec<String> {
@@ -230,7 +327,7 @@ const fn default_temperature() -> f32 {
 }
 
 const fn default_repetition_penalty_last_n() -> usize {
-	512
+	64
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]

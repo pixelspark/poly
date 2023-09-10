@@ -2,13 +2,9 @@ bind_address = "0.0.0.0:3000"
 max_concurrent = 5
 
 # Leave out or add "*" as allowed origin to allow any
-allowed_origins = [
-	"https://localhost:3000"
-]
+allowed_origins = ["https://localhost:3000"]
 
-allowed_keys = [
-	"foo"
-]
+allowed_keys = ["foo"]
 
 # To allow usage without any key
 # public = true
@@ -22,16 +18,9 @@ threads_per_session = 8
 [tasks.gpt2dutch]
 model = "gpt2dutch"
 
-[models.pythia160m]
-model_path  = "./data/pythia-160m-q4_0.bin"
-url = "https://huggingface.co/rustformers/pythia-ggml/resolve/main/pythia-160m-q4_0-ggjt.bin"
-architecture = "gptneox"
-threads_per_session = 1
-context_size = 2048
-
 [models.mpt_chat]
 model_path = "mpt-7b-chat-q5_1-ggjt.bin"
-lora_adapters = [] # Paths to LoRA adapters to apply
+lora_adapters = []                       # Paths to LoRA adapters to apply
 architecture = "mpt"
 threads_per_session = 8
 
@@ -47,22 +36,25 @@ store = { qdrant = { url = "http://localhost:6334", collection = "test" } }
 dimensions = 3200
 embedding_model = "orcamini3b"
 
-[tasks.pythia]
-model = "pythia160m"
-
 [tasks.assistant]
-model = "mpt_chat"	# The model to use (must be specified above)
+model = "mpt_chat" # The model to use (must be specified above)
 prelude = "" # Prompt that is fed once per session to the model
 prefix = "<|im_start|>user\n" # Prompt that is fed before each user input (may be multiple in a chat)
 postfix = "<|im_end|><|im_start|>assistant\n" # answer<|im_end|> # Prompt that is appended to each user input
-private_tokens = ["<|im_start|>", "<|im_end|>"] # Tokens that should never be returned to the user nor accepted in input
-stop_sequences = ["<|im_end|>", " stop"] # Text sequences that cause generation to stop (in addition to the end of text token)
+private_tokens = [
+	"<|im_start|>",
+	"<|im_end|>",
+] # Tokens that should never be returned to the user nor accepted in input
+stop_sequences = [
+	"<|im_end|>",
+	" stop",
+] # Text sequences that cause generation to stop (in addition to the end of text token)
 
 [tasks.true_or_false]
 model = "mpt_chat"
 prelude = "<|im_start|>system\nYou are given statements and determine whether it is true or false.<|im_end|>\n"
 prefix = "<|im_start|>user\nIs the following statement true or false: "
-postfix = "<|im_end|><|im_start|>assistant\n" # answer<|im_end|>
+postfix = "<|im_end|><|im_start|>assistant\n"                                                                   # answer<|im_end|>
 
 # When configured, the model will be allowed to freely generate tokens (up to max_tokens) after being fed the prompt.
 # Then, the bias prompt will be fed, after which *biased* generation will be performed (using the schema specified).
@@ -86,3 +78,31 @@ model = "vicuna13b"
 
 # JSON schemas can also be loaded from a file
 biaser = { json_schema_file = "./data/cars.schema.json" }
+
+# LLama2 13B chat
+[models.llama2_13b_chat]
+model_path = "/Users/tommy/Downloads/models/llama-2-13b-chat.ggmlv3.q4_0.bin"
+architecture = "llama"
+use_gpu = true
+threads_per_session = 8
+
+[tasks.llama2_13b_chat]
+model = "llama2_13b_chat"
+prefix = "[INST]"
+postfix = "[/INST] "
+prelude = "<<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe.  Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\n\nIf a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information.\n<</SYS>>\n\n"
+
+[tasks.llama2_13b_chat_mirostat]
+model = "llama2_13b_chat"
+prefix = "[INST]"
+postfix = "[/INST] "
+prelude = "<<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe.  Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\n\nIf a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information.\n<</SYS>>\n\n"
+
+# Custom sampler chain
+# Format is: `sampler_name:key1=value1:key2=value2`.
+# Underscore and dash are ignored when comparing sampler names and comparison is case-insensitive. A partial key name may 
+# be specified as long as it's not ambiguous. If the sampler only has one option (for example Temperature) the key and 
+# equals sign can be left out entirely. (https://github.com/rustformers/llm/blob/18b2a7d37e56220487e851a45badc46bf9dcb9d3/crates/llm-base/src/samplers.rs#L222)
+#
+# see https://docs.rs/llm-samplers/latest/llm_samplers/index.html for available samplers
+samplers = ["mirostat1:n_vocab=32000"]

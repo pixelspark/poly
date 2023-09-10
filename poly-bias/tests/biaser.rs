@@ -1,10 +1,15 @@
-use std::{collections::HashMap, sync::Once};
+use std::{
+	collections::HashMap,
+	str::FromStr,
+	sync::{Mutex, Once},
+};
 #[cfg(test)]
 use std::{path::Path, sync::Arc};
 
 use llm::{
-	samplers, InferenceFeedback, InferenceParameters, InferenceSessionConfig, Model, ModelArchitecture, ModelParameters, OutputRequest, Prompt,
-	TokenBias, TokenUtf8Buffer,
+	samplers::{llm_samplers::types::SamplerChain, ConfiguredSamplers},
+	InferenceError, InferenceFeedback, InferenceParameters, InferenceSessionConfig, Model, ModelArchitecture, ModelParameters, OutputRequest, Prompt,
+	TokenUtf8Buffer,
 };
 
 use poly_bias::{
@@ -230,13 +235,13 @@ pub fn test_array_parser() {
 	assert!(bias.can_end());
 }
 
-static MODEL_PATH: &str = "../data/pythia-160m-q4_0.bin";
+static MODEL_PATH: &str = "../data/gpt2.bin";
 
 #[test]
 pub fn test_json_biaser_objects() {
 	setup();
 	let model = llm::load_dynamic(
-		Some(ModelArchitecture::GptNeoX),
+		Some(ModelArchitecture::Gpt2),
 		Path::new(MODEL_PATH),
 		llm::TokenizerSource::Embedded,
 		ModelParameters::default(),
@@ -281,7 +286,7 @@ pub fn test_json_biaser_objects() {
 pub fn test_json_biaser() {
 	setup();
 	let model = llm::load_dynamic(
-		Some(ModelArchitecture::GptNeoX),
+		Some(ModelArchitecture::Gpt2),
 		Path::new(MODEL_PATH),
 		llm::TokenizerSource::Embedded,
 		ModelParameters::default(),
@@ -354,6 +359,7 @@ pub fn test_json_biaser() {
 fn test_json_bias(schema: JsonSchema, model: &dyn Model) {
 	setup();
 	for seed in [1340, 1338, 1339] {
+		println!("Run with seed {seed}");
 		let mut rng = rand::rngs::StdRng::seed_from_u64(seed); // Deterministic for tests
 
 		let mut bias = JsonBiaser::new(&schema);
@@ -391,11 +397,17 @@ fn test_json_bias(schema: JsonSchema, model: &dyn Model) {
 				println!("next_valid_tokens: {} tokens", next_valid_tokens.len());
 			}
 
-			let sampler = samplers::TopPTopK {
-				bias_tokens: TokenBias::new(next_valid_tokens),
-				..Default::default()
+			let cs = ConfiguredSamplers::from_str("").unwrap();
+
+			println!("next_valid_tokens: {next_valid_tokens:?}");
+			let flat_bias = llm::samplers::llm_samplers::samplers::SampleFlatBias::new(next_valid_tokens);
+			let mut samplers = SamplerChain::new();
+			samplers.push_sampler(flat_bias);
+			samplers += cs.builder.into_chain();
+
+			let inference_params = InferenceParameters {
+				sampler: Arc::new(Mutex::new(samplers)),
 			};
-			let inference_params = InferenceParameters { sampler: Arc::new(sampler) };
 
 			match session.infer_next_token(model, &inference_params, &mut OutputRequest::default(), &mut rng) {
 				Ok(out) => {
@@ -421,10 +433,11 @@ fn test_json_bias(schema: JsonSchema, model: &dyn Model) {
 						bias.next_valid_tokens(),
 					);
 				}
-				Err(e) => {
-					// End of text
-					println!("End {e:?}");
+				Err(InferenceError::EndOfText) => {
 					break;
+				}
+				Err(e) => {
+					panic!("inference error: {e:?}");
 				}
 			}
 		}

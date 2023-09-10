@@ -3,14 +3,16 @@ use std::{
 	fmt::Debug,
 	fs::File,
 	io::BufReader,
-	sync::Arc,
+	sync::{Arc, Mutex},
 	time::{Duration, Instant},
 };
 
-use llm::{InferenceParameters, InferenceRequest, InferenceStats, OutputRequest, Prompt, TokenBias, TokenId, TokenUtf8Buffer};
+use llm::{
+	samplers::llm_samplers::types::SamplerChain, InferenceError, InferenceParameters, InferenceRequest, InferenceStats, OutputRequest, Prompt,
+	TokenId, TokenUtf8Buffer,
+};
 use poly_bias::{
 	json::{JsonBiaser, JsonSchema},
-	sampler::TopPTopKBiased,
 	Biaser, NullBiaser,
 };
 
@@ -301,23 +303,29 @@ impl BackendSession {
 				}
 				only_possible_token
 			} else {
-				// Sample a token using the model
-				let sampler = TopPTopKBiased {
-					bias_tokens: TokenBias::new(biaser_bias),
-					temperature: self.task_config.temperature,
-					top_k: self.task_config.top_k,
-					top_p: self.task_config.top_p,
-					repeat_penalty: self.task_config.repeat_penalty,
-					repetition_penalty_last_n: self.task_config.repetition_penalty_last_n,
-				};
-
-				inference_params.sampler = Arc::new(sampler);
+				let mut samplers = SamplerChain::new();
+				let flat_bias = llm::samplers::llm_samplers::samplers::SampleFlatBias::new(biaser_bias);
+				samplers.push_sampler(flat_bias);
+				samplers += self.task_config.sampler_chain();
+				tracing::debug!("sampler: {samplers:?}");
+				inference_params.sampler = Arc::new(Mutex::new(samplers));
 
 				let start = Instant::now();
-				let Ok(out) = self
-					.session
-					.infer_next_token(self.model.as_ref().as_ref(), &inference_params, &mut OutputRequest::default(), &mut rng) else {
-						break;
+				let out =
+					match self
+						.session
+						.infer_next_token(self.model.as_ref().as_ref(), &inference_params, &mut OutputRequest::default(), &mut rng)
+					{
+						Ok(out) => out,
+						Err(InferenceError::EndOfText) => break,
+						Err(InferenceError::ContextFull) => {
+							tracing::warn!("ending generation because context is full");
+							break;
+						}
+						Err(e) => {
+							tracing::error!("inference error: {e}");
+							break;
+						}
 					};
 				completion_stats.add(&InferenceStats {
 					feed_prompt_duration: Duration::ZERO,

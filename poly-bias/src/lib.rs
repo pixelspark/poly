@@ -1,7 +1,6 @@
 use llm::{TokenId, Tokenizer};
 
 pub mod json;
-pub mod sampler;
 
 /// Logit value to indicate a token is allowed to be present in the result
 pub const TOKEN_ALLOWED: f32 = 10000.0;

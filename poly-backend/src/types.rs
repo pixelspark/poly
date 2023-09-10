@@ -1,6 +1,6 @@
-use llm::{samplers::TopPTopK, InferenceError, InferenceParameters, TokenBias, TokenId, TokenizationError};
+use llm::{InferenceError, InferenceParameters, TokenId, TokenizationError};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
 use crate::{config::TaskConfig, memory::MemoryError};
@@ -41,16 +41,9 @@ pub struct TokenResponse {
 
 impl From<TaskConfig> for InferenceParameters {
 	fn from(val: TaskConfig) -> Self {
-		let sampler = TopPTopK {
-			top_k: val.top_k,
-			top_p: val.top_p,
-			repeat_penalty: val.repeat_penalty,
-			temperature: val.temperature,
-			repetition_penalty_last_n: val.repetition_penalty_last_n,
-			bias_tokens: TokenBias::empty(),
-		};
-
-		InferenceParameters { sampler: Arc::new(sampler) }
+		InferenceParameters {
+			sampler: Arc::new(Mutex::new(val.sampler_chain())),
+		}
 	}
 }
 
