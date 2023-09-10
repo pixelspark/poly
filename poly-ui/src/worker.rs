@@ -89,7 +89,6 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 
 		// Load backend
 		let backend = Arc::new({
-			println!("LLMWORKER");
 			let (ptx, mut prx) = tokio::sync::mpsc::channel(32);
 			let backend_future = Backend::from(config, Some(ptx));
 
@@ -100,24 +99,7 @@ pub fn llm_worker() -> Subscription<LLMWorkerEvent> {
 				}
 			});
 
-			// let backend;
-			// loop {
-			// 	println!("LLMWORKER2");
-			// 	tokio::select! {
-			// 		Some(progress) = prx.recv() => {
-			// 			println!("LLMWORKER3");
-			// 			output.send(LLMWorkerEvent::Loading(progress)).await.unwrap();
-			// 		},
-			// 		b = backend_future => {
-			// 			println!("LLNWORKER4");
-			// 			backend = b;
-			// 			break;
-			// 		}
-			// 	}
-			// }
-			let b = tokio::spawn(backend_future).await.unwrap();
-			println!("Backend future complete");
-			b
+			tokio::spawn(backend_future).await.unwrap()
 		});
 		let mut session = backend.start(&selected_task_name, &SessionRequest {}, backend.clone()).unwrap();
 
