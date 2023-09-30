@@ -2,13 +2,16 @@ use std::{
 	borrow::Cow,
 	collections::{HashMap, HashSet},
 	path::PathBuf,
-	sync::{Arc, Mutex},
+	sync::{Arc, Mutex, RwLock},
 };
 
 use directories::ProjectDirs;
 use futures_util::StreamExt;
 pub use llm::{InferenceFeedback, InferenceResponse};
-use llm::{InferenceParameters, InferenceSessionConfig, InferenceStats, Model, ModelParameters, OutputRequest, Prompt, TokenId, TokenizerSource};
+use llm::{
+	InferenceParameters, InferenceSession, InferenceSessionConfig, InferenceSnapshot, InferenceStats, Model, ModelParameters, OutputRequest, Prompt,
+	TokenId, TokenizerSource,
+};
 use regex::Regex;
 use tokio::{fs::File, io::AsyncWriteExt, sync::mpsc::Sender, task::spawn_blocking};
 
@@ -31,6 +34,7 @@ pub struct Backend {
 	pub models: HashMap<String, Arc<Box<dyn llm::Model>>>,
 	pub memories: HashMap<String, Arc<Box<dyn Memory>>>,
 	pub stats: Arc<BackendStats>,
+	pub prelude_snapshots: RwLock<HashMap<String, InferenceSnapshot>>,
 }
 
 const CACHE_MODELS_DIR: &str = "models";
@@ -60,6 +64,7 @@ impl Backend {
 			models: HashMap::new(),
 			stats: Arc::new(BackendStats::default()),
 			memories: HashMap::new(),
+			prelude_snapshots: RwLock::new(HashMap::new()),
 		};
 
 		// Load models
@@ -413,30 +418,59 @@ impl Backend {
 
 		let memory = task_config.memorization.as_ref().map(|mc| self.memories.get(&mc.memory).unwrap());
 
-		let model = self.models.get(&task_config.model).unwrap();
+		let model = self.models.get(&task_config.model).unwrap().clone();
 		let n_threads = self.config.models[&task_config.model].threads_per_session;
 		let inference_config: InferenceSessionConfig = InferenceSessionConfig {
 			n_threads,
 			n_batch: self.config.models[&task_config.model].batch_size,
 			..InferenceSessionConfig::default()
 		};
-		let mut session = model.start_session(inference_config);
+
 		let inference_parameters: InferenceParameters = task_config.clone().into();
 
-		if let Some(ref prelude_prompt) = task_config.prelude {
+		let session = if let Some(ref prelude_prompt) = task_config.prelude {
 			if !prelude_prompt.is_empty() {
-				tracing::debug!("feeding prelude prompt: '{prelude_prompt}'");
-				session.feed_prompt(
-					model.as_ref().as_ref(),
-					Prompt::Text(&prelude_prompt.clone()),
-					&mut OutputRequest::default(),
-					|r| -> Result<InferenceFeedback, BackendError> {
-						tracing::trace!("Feed prompt: received {r:?}");
-						Ok(InferenceFeedback::Continue)
-					},
-				)?;
+				// Do we have a snapshot?
+				let cache = self.prelude_snapshots.read().unwrap();
+				if let Some(snapshot) = cache.get(task_name) {
+					// We have a snapshot
+					tracing::debug!("Re-using prelude snapshot for task {task_name}");
+					InferenceSession::from_snapshot(snapshot.clone(), model.as_ref().as_ref()).expect("restore prelude")
+				} else {
+					// We are dropping the read lock here because further on we want to acquire a write lock, and RwLock
+					// has no way to upgrade the read lock to a write lock. This is fine for now - it might cause us to
+					// generate the prelude twice but that's okay.
+					drop(cache);
+					let mut session = model.start_session(inference_config);
+
+					tracing::debug!("feeding prelude prompt: '{prelude_prompt}'");
+					session.feed_prompt(
+						model.as_ref().as_ref(),
+						Prompt::Text(&prelude_prompt.clone()),
+						&mut OutputRequest::default(),
+						|r| -> Result<InferenceFeedback, BackendError> {
+							tracing::trace!("Feed prompt: received {r:?}");
+							Ok(InferenceFeedback::Continue)
+						},
+					)?;
+
+					// Save snapshot
+					tracing::trace!("Caching prelude snapshot for task {task_name}");
+					let snapshot = unsafe { session.get_snapshot().to_owned() };
+					{
+						let mut cache = self.prelude_snapshots.write().unwrap();
+						cache.insert(task_name.to_string(), snapshot);
+					}
+					session
+				}
+			} else {
+				// Just a plain session
+				model.start_session(inference_config)
 			}
-		}
+		} else {
+			// Just a plain session
+			model.start_session(inference_config)
+		};
 
 		Ok(BackendSession {
 			model: model.clone(),
