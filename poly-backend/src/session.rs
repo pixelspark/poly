@@ -50,7 +50,7 @@ impl Debug for BackendSession {
 }
 
 impl BackendSession {
-	fn reminder_prompt(&mut self, request: &PromptRequest) -> Result<Option<String>, BackendError> {
+	fn remember_prompt(&mut self, request: &PromptRequest) -> Result<Option<String>, BackendError> {
 		// Check if we need to recall items from memory first
 		if let Some(memorization) = &self.task_config.memorization {
 			if let Some(retrieve) = memorization.retrieve {
@@ -62,17 +62,17 @@ impl BackendSession {
 					let handle = tokio::runtime::Handle::current();
 					let _guard = handle.enter();
 					let memory = self.memory.clone().unwrap();
-					let reminder_prompt = handle
+					let remember_prompt = handle
 						.block_on(tokio::spawn(async move {
 							let rm = memory.get(&embedding.embedding, retrieve);
 							let remembered = rm.await?;
 							tracing::debug!("retrieved from memory: {remembered:?}");
-							let reminder_prompt: String = remembered.join("\n");
-							Ok::<_, BackendError>(reminder_prompt)
+							let remember_prompt: String = remembered.join("\n");
+							Ok::<_, BackendError>(remember_prompt)
 						}))
 						.unwrap()?;
-					tracing::info!("Reminder prompt: {reminder_prompt}");
-					return Ok(Some(reminder_prompt));
+					tracing::info!("Remember prompt: {remember_prompt}");
+					return Ok(Some(remember_prompt));
 				}
 			}
 		}
@@ -138,9 +138,9 @@ impl BackendSession {
 		);
 		let mut tokens = vec![];
 
-		// Append reminder tokens
-		if let Some(reminder_prompt) = self.reminder_prompt(request)? {
-			tokens.append(&mut Prompt::Text(&reminder_prompt).to_tokens(self.model.tokenizer(), beginning_of_sentence && tokens.is_empty())?)
+		// Append remember tokens
+		if let Some(remember_prompt) = self.remember_prompt(request)? {
+			tokens.append(&mut Prompt::Text(&remember_prompt).to_tokens(self.model.tokenizer(), beginning_of_sentence && tokens.is_empty())?)
 		}
 
 		// Append prefix tokens
