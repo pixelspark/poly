@@ -190,6 +190,13 @@ GGML-->CUDA
 
 ## License
 
+Poly is [licensed under the Apache 2.0 license](http://www.apache.org/licenses/LICENSE-2.0) from Git revision `035eb06b`
+onwards (only). Kindly note that this license provides no entitlement to support whatsoever. If you have any specific
+licensing or support requirements, please contact the authors.
+
+We will accept contributions only if accompanied with a written statement that the contributed code is also
+(at least) Apache 2.0 licensed.
+
 Specific licenses apply to the following files:
 
 - [./data/gpt2.bin](./data/gpt2.bin): MIT, source [here](https://huggingface.co/marella/gpt-2-ggml), license [here](https://github.com/marella/ctransformers/blob/main/LICENSE).
