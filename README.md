@@ -190,7 +190,7 @@ GGML-->CUDA
 
 ## License
 
-Poly is [licensed under the Apache 2.0 license](http://www.apache.org/licenses/LICENSE-2.0) from Git revision `035eb06b`
+Poly is [licensed under the Apache 2.0 license](http://www.apache.org/licenses/LICENSE-2.0) from Git revision `f329d35`
 onwards (only). Kindly note that this license provides no entitlement to support whatsoever. If you have any specific
 licensing or support requirements, please contact the authors.
 
