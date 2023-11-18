@@ -152,7 +152,7 @@ impl BackendSession {
 		let mut user_tokens = Prompt::Text(&request.prompt).to_tokens(self.model.tokenizer(), beginning_of_sentence && tokens.is_empty())?;
 
 		// Check for private tokens in user prompt
-		let private_tokens = self.task_config.private_tokens.clone().unwrap_or(vec![]);
+		let private_tokens = self.task_config.private_tokens.clone().unwrap_or_default();
 		let private_token_ids: Vec<u32> = private_tokens
 			.iter()
 			.map(|token_str| {

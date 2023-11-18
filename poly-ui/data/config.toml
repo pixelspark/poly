@@ -1,6 +1,6 @@
 # LLama2 13B chat
 [models.llama2_13b_chat]
-model_path = "@llama-2-13b-chat.ggmlv3.q4_0.bin"
+model_path = "/Users/tommy/Repos/models/llama-2-13b-chat.ggmlv3.q4_0.bin"
 architecture = "llama"
 use_gpu = true
 threads_per_session = 8

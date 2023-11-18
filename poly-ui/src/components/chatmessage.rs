@@ -39,7 +39,7 @@ impl container::StyleSheet for ChatMessageTheme {
 				Color::from_rgb8(236, 0, 0)
 			}),
 			background: Some(iced::Background::Color(self.color())),
-			border_radius: 5.0,
+			border_radius: 5.0.into(),
 			border_width: 0.0,
 			border_color: Color::TRANSPARENT,
 		}

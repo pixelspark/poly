@@ -326,7 +326,7 @@ impl JsonToken {
 	}
 
 	pub fn token_id(&self, vocab: &Tokenizer) -> Option<TokenId> {
-		let Some(s) = self.to_string() else { return None };
+		let s = self.to_string()?;
 
 		match vocab.tokenize(&s, false) {
 			Ok(tokens) => {
@@ -613,7 +613,11 @@ impl<'schema> JsonBiaser<'schema> {
 			JsonParserState::End(_) => vec![],
 			JsonParserState::InObject(object_state) => object_state.next_valid_tokens(),
 			JsonParserState::InString(string_so_far) => {
-				let JsonSchema::String { max_length, r#enum: string_values } = self.schema else {
+				let JsonSchema::String {
+					max_length,
+					r#enum: string_values,
+				} = self.schema
+				else {
 					panic!("in string without string schema");
 				};
 
