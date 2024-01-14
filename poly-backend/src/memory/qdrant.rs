@@ -36,7 +36,7 @@ impl Memory for QdrantMemory {
 		let id = uuid::Uuid::new_v5(&ITEM_NAMESPACE, text.as_bytes());
 		let points = vec![PointStruct::new(id.to_string(), embedding.to_vec(), payload)];
 		self.client
-			.upsert_points_blocking(&self.collection_name, points, None)
+			.upsert_points_blocking(&self.collection_name, None, points, None)
 			.await
 			.map_err(|x| MemoryError::Storage(x.to_string()))?;
 		Ok(())
@@ -66,7 +66,7 @@ impl Memory for QdrantMemory {
 
 	async fn clear(&self) -> Result<(), MemoryError> {
 		self.client
-			.delete_points(self.collection_name.to_string(), &PointsSelector::default(), None)
+			.delete_points(self.collection_name.to_string(), None, &PointsSelector::default(), None)
 			.await
 			.map_err(|x| MemoryError::Storage(x.to_string()))?;
 		Ok(())
